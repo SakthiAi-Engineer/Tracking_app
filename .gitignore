@@ -1,0 +1,20 @@
+# .gitignore
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.db
+*.sqlite3
+*.log
+*.csv
+*.xlsx
+.DS_Store
+.env
+.venv/
+env/
+venv/
+.idea/
+.vscode/
+*.egg-info/
+uploaded_plans/
+daily_logs/
