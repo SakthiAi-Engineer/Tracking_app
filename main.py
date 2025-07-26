@@ -13,11 +13,7 @@ UPLOAD_DIR = "uploaded_plans"
 FREEZE_FILE = "frozen_invoices.csv"
 STATUS_FILE = "daily_status_updates.csv"
 DAILY_LOG_DIR = "daily_logs"
-USERS = {
-    "admin": "admin123",
-    "user": "user123",
-    "management": "manage123"
-}
+USERS = dict(st.secrets["users"])
 
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(DAILY_LOG_DIR, exist_ok=True)
