@@ -7,3 +7,4 @@ streamlit-authenticator
 pdfkit
 reportlab
 fpdf
+psutil
