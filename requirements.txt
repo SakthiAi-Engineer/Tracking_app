@@ -6,3 +6,4 @@ plotly
 streamlit-authenticator
 pdfkit
 reportlab
+fpdf
