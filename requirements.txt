@@ -8,3 +8,4 @@ pdfkit
 reportlab
 fpdf
 psutil
+streamlit_gsheets
