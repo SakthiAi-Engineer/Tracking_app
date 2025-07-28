@@ -4,7 +4,6 @@ import plotly.express as px
 from datetime import datetime
 
 # Google Sheets Setup
-gsheets_url = st.secrets["gsheets_url"]
 conn = st.connection("gsheets")
 
 def load_data(sheet_name):
