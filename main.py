@@ -4,6 +4,7 @@ import pandas as pd
 import os
 from datetime import datetime
 import plotly.express as px
+import psutil
 
 # App Config
 st.set_page_config(page_title="Home Textile Tracker", layout="wide")
@@ -360,3 +361,10 @@ if page == "Unlock Process" and role == "admin":
     if st.button("Unlock Process"):
         st.session_state.unlocked_process[(selected_po, selected_process)] = True
         st.success(f"Process '{selected_process}' for PO '{selected_po}' has been unlocked.")
+def get_memory_usage():
+    process = psutil.Process(os.getpid())
+    mem_info = process.memory_info()
+    return mem_info.rss / (1024 ** 2)  # Memory usage in MB
+
+st.sidebar.title("System Monitor")
+st.sidebar.write(f"Memory Usage: {get_memory_usage():.2f} MB")
