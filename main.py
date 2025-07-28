@@ -197,7 +197,7 @@ if page == "Visualize":
                     else:
                         status = "🟨 On Time"
                 elif not actual_row.empty:
-                    status = "🟡 In Progress"
+                    status = "🔵 In Progress"
                 else:
                     status = "⬜ Not Started"
 
