@@ -1,487 +1,370 @@
-# textile_tracker_app.py - Improved Version with Enhanced Security & Code Quality
+# textile_tracker_app.py
 import streamlit as st
 import pandas as pd
 import os
-import re
-import hashlib
-import logging
-from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Tuple
+from datetime import datetime
 import plotly.express as px
 import psutil
-from pathlib import Path
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('app.log'),
-        logging.StreamHandler()
-    ]
-)
-logger = logging.getLogger(__name__)
 
 # App Config
-st.set_page_config(
-    page_title="Home Textile Tracker", 
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+st.set_page_config(page_title="Home Textile Tracker", layout="wide")
 
-# Security Constants
-MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
-ALLOWED_EXTENSIONS = ['.xlsx', '.xls']
-MAX_UPLOAD_ATTEMPTS = 3
-SESSION_TIMEOUT = 30  # minutes
+# Constants
+UPLOAD_DIR = "uploaded_plans"
+FREEZE_FILE = "frozen_invoices.csv"
+STATUS_FILE = "daily_status_updates.csv"
+DAILY_LOG_DIR = "daily_logs"
+USERS = dict(st.secrets["users"])
 
-# File Constants
-UPLOAD_DIR = Path("uploaded_plans")
-FREEZE_FILE = Path("frozen_invoices.csv")
-STATUS_FILE = Path("daily_status_updates.csv")
-DAILY_LOG_DIR = Path("daily_logs")
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+os.makedirs(DAILY_LOG_DIR, exist_ok=True)
 
-# Process workflow constants
-PROCESS_OPTIONS = [
+# Login
+if "logged_in" not in st.session_state:
+    st.sidebar.title("Login")
+    username = st.sidebar.text_input("Username")
+    password = st.sidebar.text_input("Password", type="password")
+    login_btn = st.sidebar.button("Login")
+
+    if login_btn:
+        if username in USERS and USERS[username] == password:
+            st.session_state["role"] = username
+            st.session_state["logged_in"] = True
+            st.rerun()
+        else:
+            st.sidebar.error("Invalid login")
+    st.stop()
+
+role = st.session_state["role"]
+
+# Logout Button
+with st.sidebar:
+    st.markdown("---")
+    if st.button("Logout"):
+        for key in list(st.session_state.keys()):
+            del st.session_state[key]
+        st.experimental_rerun()
+
+# Sidebar Navigation
+if role == "admin":
+    page = st.sidebar.radio("Go to", [
+        "Upload", "Daily Status Update", "Visualize", "Logs", "Unlock POs", "Unlock Process"
+    , "Pie chart view"])
+elif role == "user":
+    page = st.sidebar.radio("Go to", [
+        "Daily Status Update", "Visualize", "Logs"
+    ])
+elif role == "management":
+    page = st.sidebar.radio("Go to", [
+        "Visualize", "Pie chart view"
+    ])
+
+process_options = [
     "Warping", "Sizing", "Weaving", "Greige Inspection", "Wet Processing",
     "Inspection", "Stitching", "Final Inspection", "Packing & Cartooning", "Shipment"
 ]
 
-class SecurityManager:
-    """Handles security-related operations"""
-    
-    @staticmethod
-    def sanitize_input(text: str, max_length: int = 100) -> str:
-        """Sanitize user input to prevent injection attacks"""
-        if not isinstance(text, str):
-            return ""
-        
-        # Remove potentially dangerous characters
-        sanitized = re.sub(r'[<>"\';\\]', '', text)
-        # Limit length
-        sanitized = sanitized[:max_length]
-        # Strip whitespace
-        return sanitized.strip()
-    
-    @staticmethod
-    def validate_po_number(po_no: str) -> bool:
-        """Validate PO number format"""
-        if not po_no:
-            return False
-        # Allow alphanumeric, hyphens, underscores
-        return bool(re.match(r'^[A-Za-z0-9_-]+$', po_no))
-    
-    @staticmethod
-    def hash_password(password: str) -> str:
-        """Hash password for secure storage"""
-        return hashlib.sha256(password.encode()).hexdigest()
-    
-    @staticmethod
-    def validate_file_upload(uploaded_file) -> Tuple[bool, str]:
-        """Validate uploaded file for security"""
-        if not uploaded_file:
-            return False, "No file uploaded"
-        
-        # Check file size
-        if uploaded_file.size > MAX_FILE_SIZE:
-            return False, f"File too large. Maximum size: {MAX_FILE_SIZE/1024/1024:.1f}MB"
-        
-        # Check file extension
-        file_ext = Path(uploaded_file.name).suffix.lower()
-        if file_ext not in ALLOWED_EXTENSIONS:
-            return False, f"Invalid file type. Allowed: {', '.join(ALLOWED_EXTENSIONS)}"
-        
-        return True, "Valid file"
+# Enable editing for admin
+if "enable_edits" not in st.session_state:
+    st.session_state.enable_edits = {}
+if "unlocked_process" not in st.session_state:
+    st.session_state.unlocked_process = {}
+if role == "admin":
+    st.sidebar.markdown("---")
+    toggle_po = st.sidebar.text_input("Enable PO for Editing")
+    if st.sidebar.button("Enable PO") and toggle_po:
+        st.session_state.enable_edits[toggle_po] = True
+    toggle_process = st.sidebar.text_input("Enable Process for Editing (PO_No:Process)")
+    if st.sidebar.button("Enable Process") and toggle_process:
+        po, proc = toggle_process.split(":")
+        st.session_state.unlocked_process[(po.strip(), proc.strip())] = True
 
-class DataManager:
-    """Handles data operations with error handling"""
-    
-    @staticmethod
-    def safe_read_csv(file_path: Path) -> Optional[pd.DataFrame]:
-        """Safely read CSV file with error handling"""
-        try:
-            if file_path.exists():
-                return pd.read_csv(file_path)
-            return None
-        except Exception as e:
-            logger.error(f"Error reading CSV {file_path}: {e}")
-            st.error(f"Error reading file: {file_path.name}")
-            return None
-    
-    @staticmethod
-    def safe_write_csv(df: pd.DataFrame, file_path: Path, mode: str = 'w') -> bool:
-        """Safely write CSV file with error handling"""
-        try:
-            # Ensure directory exists
-            file_path.parent.mkdir(parents=True, exist_ok=True)
-            
-            if mode == 'a':
-                df.to_csv(file_path, mode='a', index=False, header=not file_path.exists())
-            else:
-                df.to_csv(file_path, index=False)
-            return True
-        except Exception as e:
-            logger.error(f"Error writing CSV {file_path}: {e}")
-            st.error(f"Error saving file: {file_path.name}")
-            return False
-    
-    @staticmethod
-    def validate_dataframe_structure(df: pd.DataFrame, required_columns: List[str]) -> Tuple[bool, str]:
-        """Validate DataFrame has required columns"""
-        missing_cols = [col for col in required_columns if col not in df.columns]
-        if missing_cols:
-            return False, f"Missing required columns: {', '.join(missing_cols)}"
-        return True, "Valid structure"
-
-class SessionManager:
-    """Manages user sessions and authentication"""
-    
-    @staticmethod
-    def initialize_session():
-        """Initialize session state variables"""
-        if "logged_in" not in st.session_state:
-            st.session_state.logged_in = False
-        if "login_time" not in st.session_state:
-            st.session_state.login_time = None
-        if "failed_attempts" not in st.session_state:
-            st.session_state.failed_attempts = 0
-        if "enable_edits" not in st.session_state:
-            st.session_state.enable_edits = {}
-        if "unlocked_process" not in st.session_state:
-            st.session_state.unlocked_process = {}
-    
-    @staticmethod
-    def check_session_timeout() -> bool:
-        """Check if session has timed out"""
-        if not st.session_state.get("login_time"):
-            return True
-        
-        time_diff = datetime.now() - st.session_state.login_time
-        return time_diff > timedelta(minutes=SESSION_TIMEOUT)
-    
-    @staticmethod
-    def logout():
-        """Safely logout user"""
-        logger.info(f"User {st.session_state.get('role', 'unknown')} logged out")
-        for key in list(st.session_state.keys()):
-            del st.session_state[key]
-        st.rerun()
-
-def create_directories():
-    """Create necessary directories"""
-    try:
-        UPLOAD_DIR.mkdir(exist_ok=True)
-        DAILY_LOG_DIR.mkdir(exist_ok=True)
-    except Exception as e:
-        logger.error(f"Error creating directories: {e}")
-        st.error("Error initializing application directories")
-
-def authenticate_user() -> Optional[str]:
-    """Handle user authentication with security measures"""
-    SessionManager.initialize_session()
-    
-    # Check for session timeout
-    if st.session_state.logged_in and SessionManager.check_session_timeout():
-        st.warning("Session expired. Please login again.")
-        SessionManager.logout()
-    
-    if not st.session_state.logged_in:
-        st.sidebar.title("🔐 Login")
-        
-        # Check for too many failed attempts
-        if st.session_state.failed_attempts >= MAX_UPLOAD_ATTEMPTS:
-            st.sidebar.error("Too many failed attempts. Please refresh the page.")
-            st.stop()
-        
-        username = st.sidebar.text_input("Username", max_chars=50)
-        password = st.sidebar.text_input("Password", type="password", max_chars=100)
-        login_btn = st.sidebar.button("Login")
-        
-        if login_btn:
-            username = SecurityManager.sanitize_input(username)
-            
-            try:
-                users = dict(st.secrets["users"])
-                if username in users and users[username] == password:
-                    st.session_state.role = username
-                    st.session_state.logged_in = True
-                    st.session_state.login_time = datetime.now()
-                    st.session_state.failed_attempts = 0
-                    logger.info(f"User {username} logged in successfully")
-                    st.rerun()
-                else:
-                    st.session_state.failed_attempts += 1
-                    logger.warning(f"Failed login attempt for user: {username}")
-                    st.sidebar.error("Invalid credentials")
-            except Exception as e:
-                logger.error(f"Authentication error: {e}")
-                st.sidebar.error("Authentication system error")
-        
-        st.stop()
-    
-    return st.session_state.role
-
-def render_sidebar_navigation(role: str) -> str:
-    """Render sidebar navigation based on user role"""
-    with st.sidebar:
-        st.markdown("---")
-        st.write(f"👤 Logged in as: **{role}**")
-        
-        if st.button("🚪 Logout"):
-            SessionManager.logout()
-        
-        st.markdown("---")
-        
-        # Role-based navigation
-        if role == "admin":
-            pages = ["Upload", "Daily Status Update", "Visualize", "Logs", 
-                    "Unlock POs", "Unlock Process", "Pie chart view"]
-        elif role == "user":
-            pages = ["Daily Status Update", "Visualize", "Logs"]
-        elif role == "management":
-            pages = ["Visualize", "Pie chart view"]
-        else:
-            pages = ["Visualize"]
-        
-        return st.radio("📋 Navigate to:", pages)
-
-def render_system_monitor():
-    """Render system monitoring information"""
-    try:
-        process = psutil.Process(os.getpid())
-        mem_info = process.memory_info()
-        memory_mb = mem_info.rss / (1024 ** 2)
-        
-        st.sidebar.markdown("---")
-        st.sidebar.title("📊 System Monitor")
-        st.sidebar.metric("Memory Usage", f"{memory_mb:.1f} MB")
-        
-        # Add CPU usage
-        cpu_percent = psutil.cpu_percent(interval=1)
-        st.sidebar.metric("CPU Usage", f"{cpu_percent:.1f}%")
-        
-    except Exception as e:
-        logger.error(f"Error getting system info: {e}")
-
-def handle_file_upload():
-    """Handle secure file upload"""
-    st.title("📤 Upload Target Plan")
-    
-    uploaded_file = st.file_uploader(
-        "Upload Excel File", 
-        type=["xlsx", "xls"],
-        help="Upload your target plan in Excel format (max 10MB)"
-    )
-    
+# ---------------- PAGE 1: UPLOAD -----------------
+if page == "Upload":
+    st.title("Upload Target Plan")
+    uploaded_file = st.file_uploader("Upload Excel File", type=["xlsx"])
     if uploaded_file:
-        # Validate file
-        is_valid, message = SecurityManager.validate_file_upload(uploaded_file)
-        
-        if not is_valid:
-            st.error(f"Upload failed: {message}")
-            return
-        
-        try:
-            # Read and validate Excel file
-            df = pd.read_excel(uploaded_file)
-            
-            # Validate required columns
-            required_cols = ["PO No", "Customer"]
-            is_valid_structure, structure_message = DataManager.validate_dataframe_structure(df, required_cols)
-            
-            if not is_valid_structure:
-                st.error(f"Invalid file structure: {structure_message}")
-                return
-            
-            # Sanitize data
-            df["PO No"] = df["PO No"].astype(str).apply(lambda x: SecurityManager.sanitize_input(x, 50))
-            df["Customer"] = df["Customer"].astype(str).apply(lambda x: SecurityManager.sanitize_input(x, 100))
-            
-            # Save file
-            if DataManager.safe_write_csv(df, FREEZE_FILE):
-                st.success("✅ Target Plan uploaded and frozen successfully!")
-                st.dataframe(df, use_container_width=True)
-                logger.info(f"File uploaded successfully by {st.session_state.role}")
-            
-        except Exception as e:
-            logger.error(f"File upload error: {e}")
-            st.error("Error processing uploaded file. Please check the file format.")
+        df = pd.read_excel(uploaded_file)
+        df.to_csv(FREEZE_FILE, index=False)
+        st.success("Target Plan uploaded and frozen!")
+        st.dataframe(df)
 
-def handle_daily_status_update():
-    """Handle daily status updates with validation"""
+# ---------------- PAGE 2: DAILY STATUS UPDATE -----------------
+if page == "Daily Status Update":
     st.title("📤 Daily Status Update - Department Wise")
-    
-    # Check if frozen file exists
-    frozen_df = DataManager.safe_read_csv(FREEZE_FILE)
-    if frozen_df is None:
-        st.error("❌ No target plans uploaded yet. Please upload a plan first.")
-        return
-    
-    # Load status data
-    status_df = DataManager.safe_read_csv(STATUS_FILE)
-    if status_df is None:
-        status_df = pd.DataFrame(columns=[
-            "Timestamp", "PO No", "Customer", "Process", 
-            "Actual Start", "Actual Finish", "Remarks", "Submitted By"
-        ])
-    
-    # Get PO list and customer lookup
+    if not os.path.exists(FREEZE_FILE):
+        st.error("No target plans uploaded and frozen yet.")
+        st.stop()
+
+    frozen_df = pd.read_csv(FREEZE_FILE)
     invoice_list = frozen_df["PO No"].dropna().unique().tolist()
     customer_lookup = frozen_df.set_index("PO No")["Customer"].to_dict()
-    
-    if not invoice_list:
-        st.warning("No PO numbers found in uploaded plan.")
-        return
-    
-    # PO selection
-    selected_invoice = st.selectbox("Select PO No to update:", invoice_list)
-    selected_customer = customer_lookup.get(selected_invoice, "Unknown")
-    st.text_input("Customer Name:", selected_customer, disabled=True)
-    
-    # Process updates
+    status_df = pd.read_csv(STATUS_FILE) if os.path.exists(STATUS_FILE) else pd.DataFrame(
+        columns=["Timestamp", "PO No", "Customer", "Process", "Actual Start", "Actual Finish", "Remarks", "Submitted By"]
+    )
+
+    selected_invoice = st.selectbox("Select PO No to update or edit", invoice_list)
+    selected_customer = customer_lookup.get(selected_invoice, "")
+    st.text_input("Customer Name", selected_customer, disabled=True)
+
     invoice_status = status_df[status_df["PO No"] == selected_invoice]
-    role = st.session_state.role
-    
-    for i, process in enumerate(PROCESS_OPTIONS):
-        with st.expander(f"🔧 {process}", expanded=False):
-            row = invoice_status[invoice_status["Process"] == process]
-            
-            # Check if previous process is complete
-            prev_process_complete = True
-            if i > 0:
-                prev_process = PROCESS_OPTIONS[i - 1]
-                prev_row = invoice_status[invoice_status["Process"] == prev_process]
-                prev_process_complete = not prev_row.empty and pd.notna(prev_row.iloc[0]["Actual Finish"])
-            
-            # Check edit permissions
-            can_edit = (
-                role == "admin" or 
-                selected_invoice in st.session_state.enable_edits or
-                (selected_invoice, process) in st.session_state.unlocked_process
-            )
-            
-            if not prev_process_complete:
-                st.warning(f"⚠️ Complete previous process first: {PROCESS_OPTIONS[i-1]}")
-                continue
-            
-            if not can_edit and role != "admin":
-                st.info("🔒 This process is locked. Contact admin to unlock.")
-                continue
-            
-            # Input fields
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                submitted_by = st.text_input(
-                    "Your Name (required):", 
-                    key=f"submitter_{process}_{selected_invoice}",
-                    value=row.iloc[0]["Submitted By"] if not row.empty else "",
-                    max_chars=100
-                )
+    can_edit_po = selected_invoice in st.session_state.enable_edits or role == "admin"
+
+    for i, process in enumerate(process_options):
+        row = invoice_status[invoice_status["Process"] == process]
+        prev_process_complete = True
+        if i > 0:
+            prev = process_options[i - 1]
+            prev_row = invoice_status[invoice_status["Process"] == prev]
+            prev_process_complete = not prev_row.empty and pd.notna(prev_row.iloc[0]["Actual Finish"])
+
+        is_editable = ((selected_invoice, process) in st.session_state.unlocked_process) or \
+                      (can_edit_po and (row.empty or pd.isna(row.iloc[0]["Actual Start"]) or pd.isna(row.iloc[0]["Actual Finish"])) and prev_process_complete)
+
+        st.subheader(process)
+
+        if not row.empty and pd.notna(row.iloc[0]["Actual Start"]):
+            st.markdown(f"**Start Date:** {row.iloc[0]['Actual Start']}")
+        if not row.empty and pd.notna(row.iloc[0]["Actual Finish"]):
+            st.markdown(f"**End Date:** {row.iloc[0]['Actual Finish']}")
+
+        if not row.empty and not is_editable:
+            st.info("Submitted data is frozen. Contact admin to unlock.")
+            continue
+
+        # Always show input fields if unlocked, even if dates already exist
+        st.markdown("**Enter or Modify Dates Below:**")
+
+        submitted_by = st.text_input("Your Name (required)", key=f"submitter_{process}_{selected_invoice}", value=row.iloc[0]["Submitted By"] if not row.empty else "")
+        start_default = pd.to_datetime(row.iloc[0]["Actual Start"]).date() if not row.empty and pd.notna(row.iloc[0]["Actual Start"]) else None
+        finish_default = pd.to_datetime(row.iloc[0]["Actual Finish"]).date() if not row.empty and pd.notna(row.iloc[0]["Actual Finish"]) else None
+
+        start = st.date_input(f"{process} Start", value=start_default, key=f"start_{process}_{selected_invoice}")
+        finish = st.date_input(f"{process} Finish", value=finish_default, key=f"finish_{process}_{selected_invoice}")
+
+        remarks = st.text_area("Remarks", key=f"remarks_{process}_{selected_invoice}", value=row.iloc[0]["Remarks"] if not row.empty else "")
+
+        if st.button(f"Submit {process}", key=f"submit_{process}_{selected_invoice}"):
+            if not submitted_by:
                 
-                start_default = None
-                if not row.empty and pd.notna(row.iloc[0]["Actual Start"]):
-                    start_default = pd.to_datetime(row.iloc[0]["Actual Start"]).date()
-                
-                actual_start = st.date_input(
-                    "Actual Start Date:",
-                    key=f"start_{process}_{selected_invoice}",
-                    value=start_default
-                )
-            
-            with col2:
-                finish_default = None
-                if not row.empty and pd.notna(row.iloc[0]["Actual Finish"]):
-                    finish_default = pd.to_datetime(row.iloc[0]["Actual Finish"]).date()
-                
-                actual_finish = st.date_input(
-                    "Actual Finish Date:",
-                    key=f"finish_{process}_{selected_invoice}",
-                    value=finish_default
-                )
-            
-            remarks = st.text_area(
-                "Remarks:",
-                key=f"remarks_{process}_{selected_invoice}",
-                value=row.iloc[0]["Remarks"] if not row.empty else "",
-                max_chars=500
-            )
-            
-            # Submit button
-            if st.button(f"💾 Submit {process}", key=f"submit_{process}_{selected_invoice}"):
-                # Validate inputs
-                submitted_by = SecurityManager.sanitize_input(submitted_by, 100)
-                remarks = SecurityManager.sanitize_input(remarks, 500)
-                
-                if not submitted_by:
-                    st.error("❌ Your name is required to submit.")
-                    continue
-                
-                if actual_start and actual_finish and actual_start > actual_finish:
-                    st.error("❌ Start date cannot be after finish date.")
-                    continue
-                
-                # Create new record
+                st.error("Your name is mandatory to submit.")
+            else:
                 new_row = {
                     "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     "PO No": selected_invoice,
                     "Customer": selected_customer,
                     "Process": process,
-                    "Actual Start": actual_start.strftime("%Y-%m-%d") if actual_start else "",
-                    "Actual Finish": actual_finish.strftime("%Y-%m-%d") if actual_finish else "",
+                    "Actual Start": start,
+                    "Actual Finish": finish,
                     "Remarks": remarks,
                     "Submitted By": submitted_by
                 }
-                
-                # Update status file
-                if DataManager.safe_write_csv(pd.DataFrame([new_row]), STATUS_FILE, mode='a'):
-                    st.success(f"✅ {process} updated successfully for {selected_invoice}")
-                    logger.info(f"Process {process} updated for PO {selected_invoice} by {submitted_by}")
-                    st.rerun()
+                if row.empty:
+                    status_df = pd.concat([status_df, pd.DataFrame([new_row])], ignore_index=True)
+                else:
+                    status_df.loc[row.index[0]] = new_row
+                status_df.to_csv(STATUS_FILE, index=False)
+                log_path = os.path.join(DAILY_LOG_DIR, f"log_{datetime.today().strftime('%Y-%m-%d')}.csv")
+                pd.DataFrame([new_row]).to_csv(log_path, mode='a', index=False, header=not os.path.exists(log_path))
+                st.success(f"{process} updated for {selected_invoice}")
 
-def main():
-    """Main application function"""
-    try:
-        # Initialize
-        create_directories()
-        
-        # Authenticate user
-        role = authenticate_user()
-        if not role:
-            return
-        
-        # Render navigation
-        page = render_sidebar_navigation(role)
-        
-        # Render system monitor
-        render_system_monitor()
-        
-        # Route to appropriate page
-        if page == "Upload" and role == "admin":
-            handle_file_upload()
-        elif page == "Daily Status Update":
-            handle_daily_status_update()
-        elif page == "Visualize":
-            st.title("📊 Visualization")
-            st.info("Visualization features will be implemented here")
-        elif page == "Logs":
-            st.title("📋 Logs")
-            st.info("Logs features will be implemented here")
-        elif page == "Pie chart view":
-            st.title("🥧 Pie Chart View")
-            st.info("Pie chart features will be implemented here")
-        elif page == "Unlock POs" and role == "admin":
-            st.title("🔓 Unlock POs")
-            st.info("PO unlock features will be implemented here")
-        elif page == "Unlock Process" and role == "admin":
-            st.title("🔓 Unlock Process")
-            st.info("Process unlock features will be implemented here")
-        else:
-            st.error("❌ Access denied or page not found")
-    
-    except Exception as e:
-        logger.error(f"Application error: {e}")
-        st.error("An unexpected error occurred. Please contact support.")
+# ---------------- PAGE 3: VISUALIZE -----------------
+if page == "Visualize":
+    st.title("Process Completion Matrix with Status Comparison")
 
-if __name__ == "__main__":
-    main()
+    if not os.path.exists(FREEZE_FILE):
+        st.warning("Please upload data in Page 1.")
+    else:
+        df = pd.read_csv(FREEZE_FILE)
+        actuals = pd.read_csv(STATUS_FILE) if os.path.exists(STATUS_FILE) else pd.DataFrame()
+
+        matrix = []
+
+        for _, row in df.iterrows():
+            status_row = {"PO No": row["PO No"], "Customer": row["Customer"]}
+
+            for process in process_options:
+                actual_row = actuals[(actuals["PO No"] == row["PO No"]) & (actuals["Process"] == process)]
+                planned_end = row.get(f"{process} Finish")
+                actual_end = actual_row["Actual Finish"].values[0] if not actual_row.empty else None
+
+                if pd.notna(actual_end) and pd.notna(planned_end):
+                    delay_days = (pd.to_datetime(actual_end) - pd.to_datetime(planned_end)).days
+                    if delay_days > 0:
+                        status = f"🟥 Delayed ({delay_days}d)"
+                    elif delay_days < 0:
+                        status = f"🟩 Early ({abs(delay_days)}d)"
+                    else:
+                        status = "🟨 On Time"
+                elif not actual_row.empty:
+                    status = "🔵 In Progress"
+                else:
+                    status = "⬜ Not Started"
+
+                status_row[process] = status
+
+            matrix.append(status_row)
+
+        status_df = pd.DataFrame(matrix)
+        st.dataframe(status_df, use_container_width=True)
+
+        # Summary View
+        st.subheader("Summary Table")
+        po_selected = st.selectbox("Select PO No for Summary", status_df["PO No"].unique())
+        summary = []
+        for process in process_options:
+            plan_end = df[df["PO No"] == po_selected][f"{process} Finish"].values[0] if f"{process} Finish" in df.columns else ""
+            actual_row = actuals[(actuals["PO No"] == po_selected) & (actuals["Process"] == process)]
+            actual_end = actual_row["Actual Finish"].values[0] if not actual_row.empty else ""
+            submitted_by = actual_row["Submitted By"].values[0] if not actual_row.empty else ""
+            remarks = actual_row["Remarks"].values[0] if not actual_row.empty else ""
+            difference = ""
+            if pd.notna(plan_end) and actual_end:
+                difference = (pd.to_datetime(actual_end) - pd.to_datetime(plan_end)).days
+            summary.append({
+                "Process": process,
+                "Planned Finish": plan_end,
+                "Actual Finish": actual_end,
+                "Delay (Days)": difference,
+                "Remarks": remarks,
+                "Submitted By": submitted_by
+            })
+        st.dataframe(pd.DataFrame(summary))
+# ---------------- PAGE: PIE CHART VIEW -----------------
+if page == "Pie chart view":
+    import io
+    from plotly.io import to_image
+    from PIL import Image
+    from fpdf import FPDF
+
+    st.title("📊 Pie Chart View - Planned vs Actual (by Days)")
+
+    if not os.path.exists(FREEZE_FILE):
+        st.warning("Please upload a target plan first.")
+        st.stop()
+
+    plan_df = pd.read_csv(FREEZE_FILE)
+    actual_df = pd.read_csv(STATUS_FILE) if os.path.exists(STATUS_FILE) else pd.DataFrame()
+
+    customer_list = plan_df["Customer"].dropna().unique().tolist()
+    selected_customer = st.selectbox("Select Customer", customer_list)
+
+    customer_orders = plan_df[plan_df["Customer"] == selected_customer]
+
+    all_figs = []
+    for idx, order in customer_orders.iterrows():
+        po_no = order["PO No"]
+        if idx > 0:
+            st.markdown("---")
+        st.markdown(f"### PO No: {po_no}")
+
+        planned_durations = []
+        actual_durations = []
+
+        for process in process_options:
+            plan_start = order.get(f"{process} Start")
+            plan_end = order.get(f"{process} Finish")
+            if pd.notna(plan_start) and pd.notna(plan_end):
+                days = (pd.to_datetime(plan_end) - pd.to_datetime(plan_start)).days
+                planned_durations.append({"Process": process, "Days": max(days, 0)})
+
+            actual_rows = actual_df[(actual_df["PO No"] == po_no) & (actual_df["Process"] == process)]
+            if not actual_rows.empty:
+                actual_start = actual_rows.iloc[0]["Actual Start"]
+                actual_finish = actual_rows.iloc[0]["Actual Finish"]
+                if pd.notna(actual_start) and pd.notna(actual_finish):
+                    adays = (pd.to_datetime(actual_finish) - pd.to_datetime(actual_start)).days
+                    actual_durations.append({"Process": process, "Days": max(adays, 0)})
+
+        col1, col2 = st.columns(2)
+
+        process_colors = px.colors.qualitative.Plotly[:len(process_options)]
+        color_map = {proc: process_colors[i % len(process_colors)] for i, proc in enumerate(process_options)}
+
+        fig1, fig2 = None, None
+        if planned_durations:
+            with col1:
+                pdf = pd.DataFrame(planned_durations)
+                fig1 = px.pie(pdf, names="Process", values="Days", title="Planned Days",
+                              hover_data=['Days'], labels={'Days': 'Days'}, hole=0.3,
+                              color="Process", color_discrete_map=color_map)
+                fig1.update_traces(textinfo='value', hovertemplate='%{label}: %{percent}')
+                st.plotly_chart(fig1, use_container_width=True, key=f"{po_no}_planned")
+                st.markdown(f"**Total Planned Days:** {sum(pdf['Days'])} days")
+
+        if actual_durations:
+            with col2:
+                adf = pd.DataFrame(actual_durations)
+                fig2 = px.pie(adf, names="Process", values="Days", title="Actual Days",
+                              hover_data=['Days'], labels={'Days': 'Days'}, hole=0.3,
+                              color="Process", color_discrete_map=color_map)
+                fig2.update_traces(textinfo='value', hovertemplate='%{label}: %{percent}')
+                st.plotly_chart(fig2, use_container_width=True, key=f"{po_no}_actual")
+                st.markdown(f"**Total Actual Days:** {sum(adf['Days'])} days")
+
+        if fig1 and fig2:
+            all_figs.append((po_no, fig1, fig2))
+
+    if all_figs and st.button("📥 Download Combined PDF Report"):
+        pdf_doc = FPDF()
+        img_paths = []
+
+        for po_no, fig1, fig2 in all_figs:
+            img1 = Image.open(io.BytesIO(to_image(fig1, format="png")))
+            img2 = Image.open(io.BytesIO(to_image(fig2, format="png")))
+            path1 = f"{po_no}_planned.png"
+            path2 = f"{po_no}_actual.png"
+            img1.save(path1)
+            img2.save(path2)
+            img_paths.extend([path1, path2])
+
+            for path in [path1, path2]:
+                pdf_doc.add_page()
+                pdf_doc.image(path, x=10, y=20, w=180)
+
+        pdf_path = f"{selected_customer}_Combined_Report.pdf"
+        pdf_doc.output(pdf_path)
+
+        with open(pdf_path, "rb") as f:
+            st.download_button("Download PDF", data=f, file_name=pdf_path, mime="application/pdf")
+
+        for path in img_paths:
+            os.remove(path)
+        os.remove(pdf_path)
+# ---------------- PAGE 4: LOGS -----------------
+if page == "Logs":
+    st.title("Daily Logs and Export")
+    if os.path.exists(STATUS_FILE):
+        log_df = pd.read_csv(STATUS_FILE)
+        st.dataframe(log_df)
+        st.download_button("Download Log as CSV", log_df.to_csv(index=False), file_name="log_export.csv")
+    else:
+        st.warning("No logs available.")
+
+# ---------------- PAGE 5: UNLOCK -----------------
+if page == "Unlock POs" and role == "admin":
+    st.title("Unlock PO Data for Editing")
+    locked_pos = [po for po in pd.read_csv(FREEZE_FILE)["PO No"].unique() if po not in st.session_state.enable_edits]
+    if locked_pos:
+        selected_unlock_po = st.selectbox("Select PO to Unlock", locked_pos)
+        if st.button("Unlock Selected PO"):
+            st.session_state.enable_edits[selected_unlock_po] = True
+            st.success(f"PO {selected_unlock_po} has been unlocked.")
+    else:
+        st.info("No locked POs to unlock.")
+
+if page == "Unlock Process" and role == "admin":
+    st.title("Unlock Individual Process")
+    po_list = pd.read_csv(FREEZE_FILE)["PO No"].unique()
+    selected_po = st.selectbox("Select PO", po_list)
+    selected_process = st.selectbox("Select Process", process_options)
+    if st.button("Unlock Process"):
+        st.session_state.unlocked_process[(selected_po, selected_process)] = True
+        st.success(f"Process '{selected_process}' for PO '{selected_po}' has been unlocked.")
+def get_memory_usage():
+    process = psutil.Process(os.getpid())
+    mem_info = process.memory_info()
+    return mem_info.rss / (1024 ** 2)  # Memory usage in MB
+
+st.sidebar.title("System Monitor")
+st.sidebar.write(f"Memory Usage: {get_memory_usage():.2f} MB")
