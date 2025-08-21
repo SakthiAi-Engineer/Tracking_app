@@ -14,8 +14,6 @@ import json
 SUPABASE_URL = str(st.secrets["SUPABASE_URL"])
 SUPABASE_KEY = str(st.secrets["SUPABASE_KEY"])
 DATABASE_URL = str(st.secrets["DATABASE_URL"])
-from sqlalchemy import create_engine
-engine = create_engine(DATABASE_URL)
 
 # NVIDIA API configuration
 NVIDIA_API_KEY = str(st.secrets["NVIDIA_API_KEY"])
