@@ -8,3 +8,9 @@ pdfkit
 reportlab
 fpdf
 psutil
+psycopg2-binary
+langchain
+langchain-community
+faiss-cpu
+ollama
+supabase
