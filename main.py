@@ -14,6 +14,7 @@ import json
 SUPABASE_URL = str(st.secrets["SUPABASE_URL"])
 SUPABASE_KEY = str(st.secrets["SUPABASE_KEY"])
 DATABASE_URL = str(st.secrets["DATABASE_URL"])
+print("Database URL:", DATABASE_URL)
 
 # NVIDIA API configuration
 NVIDIA_API_KEY = str(st.secrets["NVIDIA_API_KEY"])
@@ -587,6 +588,31 @@ if page == "Logs":
         )
     else:
         st.warning("No logs available.")
+
+# === Unlock POs / Unlock Process (admin placeholders retained) ===
+if page == "Unlock POs" and role == "admin":
+    st.title("Unlock PO Data for Editing")
+    if os.path.exists(FREEZE_FILE):
+        locked_pos = [po for po in pd.read_csv(FREEZE_FILE)["PO No"].unique()]
+        if locked_pos:
+            selected_unlock_po = st.selectbox("Select PO to Unlock", locked_pos)
+            if st.button("Unlock Selected PO"):
+                st.success(f"PO {selected_unlock_po} has been unlocked (placeholder logic).")
+        else:
+            st.info("No locked POs to unlock.")
+    else:
+        st.info("No plan uploaded yet.")
+
+if page == "Unlock Process" and role == "admin":
+    st.title("Unlock Individual Process")
+    if os.path.exists(FREEZE_FILE):
+        po_list = pd.read_csv(FREEZE_FILE)["PO No"].unique()
+        selected_po = st.selectbox("Select PO", po_list)
+        selected_process = st.selectbox("Select Process", process_options)
+        if st.button("Unlock Process"):
+            st.success(f"Process '{selected_process}' for PO '{selected_po}' has been unlocked (placeholder logic).")
+    else:
+        st.info("No plan uploaded yet.")
 
 # ---------------- Ask AI ----------------
 if page == "Ask AI":
