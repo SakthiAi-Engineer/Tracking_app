@@ -19,6 +19,95 @@ DATABASE_URL = str(st.secrets["DATABASE_URL"])
 NVIDIA_API_KEY = str(st.secrets["NVIDIA_API_KEY"])
 NVIDIA_API_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 
+from sqlalchemy.exc import ArgumentError
+
+def get_database_url():
+    """
+    Get database URL with proper format handling
+    Supports both local development and Streamlit Cloud
+    """
+    
+    # Try Streamlit secrets first
+    try:
+        if "DATABASE_URL" in st.secrets:
+            database_url = st.secrets["DATABASE_URL"]
+            # Ensure proper format for SQLAlchemy
+            if not database_url.startswith("postgresql://") and "supabase" in database_url:
+                # Convert Supabase URL to proper format
+                database_url = database_url.replace("postgres://", "postgresql://")
+            return database_url
+    except Exception:
+        pass
+    
+    # Fallback to environment variable
+    database_url = os.getenv("DATABASE_URL")
+    if database_url:
+        if not database_url.startswith("postgresql://") and "postgres" in database_url:
+            database_url = database_url.replace("postgres://", "postgresql://")
+        return database_url
+    
+    # Local development fallback with SQLite
+    return "sqlite:///textile_tracker.db"
+
+def create_database_engine():
+    """
+    Create database engine with error handling
+    """
+    database_url = get_database_url()
+    
+    try:
+        # Add connection pooling parameters for better performance
+        engine = create_engine(
+            database_url,
+            pool_size=5,
+            max_overflow=10,
+            pool_pre_ping=True,
+            echo=False
+        )
+        return engine
+    except ArgumentError as e:
+        # Provide more helpful error message
+        error_msg = f"""
+        Database URL Error: {str(e)}
+        
+        Please check your DATABASE_URL format. It should be:
+        - For PostgreSQL: postgresql://username:password@host:port/database
+        - For Supabase: postgresql://username:password@host.supabase.co:5432/database
+        
+        Current URL: {database_url}
+        """
+        st.error(error_msg)
+        raise
+    except Exception as e:
+        st.error(f"Database connection error: {str(e)}")
+        raise
+
+# Configuration for other services
+def get_supabase_config():
+    """Get Supabase configuration"""
+    try:
+        return {
+            "url": st.secrets.get("SUPABASE_URL", os.getenv("SUPABASE_URL")),
+            "key": st.secrets.get("SUPABASE_KEY", os.getenv("SUPABASE_KEY"))
+        }
+    except:
+        return {
+            "url": os.getenv("SUPABASE_URL"),
+            "key": os.getenv("SUPABASE_KEY")
+        }
+
+def get_nvidia_config():
+    """Get NVIDIA API configuration"""
+    try:
+        return {
+            "api_key": st.secrets.get("NVIDIA_API_KEY", os.getenv("NVIDIA_API_KEY")),
+            "api_url": "https://integrate.api.nvidia.com/v1/chat/completions"
+        }
+    except:
+        return {
+            "api_key": os.getenv("NVIDIA_API_KEY"),
+            "api_url": "https://integrate.api.nvidia.com/v1/chat/completions"
+        }
 # ---------------- Database Setup ----------------
 def get_db_connection():
     """Create database connection using SQLAlchemy"""
