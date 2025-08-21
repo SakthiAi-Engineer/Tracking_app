@@ -20,8 +20,8 @@ NVIDIA_API_KEY = str(st.secrets["NVIDIA_API_KEY"])
 NVIDIA_API_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 
 # ---------------- Database Setup ----------------
-DATABASE_URL = os.getenv("DATABASE_URL")
-engine = create_engine(DATABASE_URL)
+st.write("DATABASE_URL:", os.getenv("DATABASE_URL"))
+
 
 def get_db_connection():
     """Create database connection using SQLAlchemy"""
