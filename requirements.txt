@@ -22,7 +22,7 @@ seaborn
 httpx
 pydantic
 jsonschema
-
+passlib
 # Optional for enhanced features
 pillow>=10.0.0
 reportlab>=4.0.0
