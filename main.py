@@ -139,23 +139,23 @@ PROCESS_OPTIONS = [
     "Inspection", "Stitching", "Final Inspection", "Packing & Cartoning", "Shipment"
 ]
 
-# ---------------- Security & User Management ----------------
-def verify_user(username, password):
-    # """Verify user against the database with hashed passwords."""
-    engine = get_db_connection()
-    with engine.connect() as conn:
-        result = conn.execute(
-            text("SELECT hashed_password FROM users WHERE username = :username"),
-            {"username": username}
-        )
-        user_row = result.fetchone()
-        if user_row and pwd_context.verify(password, user_row[0]):
-            role_result = conn.execute(
-                text("SELECT role FROM users WHERE username = :username"),
-                {"username": username}
-            )
-            return role_result.scalar()
-    return None
+# # ---------------- Security & User Management ----------------
+# def verify_user(username, password):
+#     # """Verify user against the database with hashed passwords."""
+#     engine = get_db_connection()
+#     with engine.connect() as conn:
+#         result = conn.execute(
+#             text("SELECT hashed_password FROM users WHERE username = :username"),
+#             {"username": username}
+#         )
+#         user_row = result.fetchone()
+#         if user_row and pwd_context.verify(password, user_row[0]):
+#             role_result = conn.execute(
+#                 text("SELECT role FROM users WHERE username = :username"),
+#                 {"username": username}
+#             )
+#             return role_result.scalar()
+#     return None
 
 # ---------------- Database Operations ----------------
 def save_frozen_plan(df):
