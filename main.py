@@ -21,8 +21,6 @@ NVIDIA_API_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 
 # ---------------- Database Setup ----------------
 st.write("DATABASE_URL from secrets:", st.secrets["DATABASE_URL"])
-st.write("Secrets keys available:", list(st.secrets.keys()))
-st.write("DATABASE_URL:", st.secrets["DATABASE_URL"])
 
 
 def get_db_connection():
