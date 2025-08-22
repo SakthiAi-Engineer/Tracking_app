@@ -8,50 +8,20 @@ pdfkit
 reportlab
 fpdf
 psutil
-# Core dependencies
-streamlit>=1.28.0
-pandas>=2.0.0
-numpy>=1.24.0
-plotly>=5.15.0
-openpyxl>=3.1.0
-psycopg2-binary>=2.9.7
-sqlalchemy>=2.0.0
-requests>=2.31.0
-python-dotenv>=1.0.0
-
-# Database and cloud services
-sqlalchemy>=2.0.0
-psycopg2-binary>=2.9.7
-supabase>=2.0.0
-
-# AI/ML capabilities
-langchain>=0.1.0
-langchain-community>=0.1.0
-langchain-openai>=0.1.0
-
-# Data processing
-pandas>=2.0.0
-numpy>=1.24.0
-openpyxl>=3.1.0
-python-dateutil>=2.8.0
-
-# Visualization
-plotly>=5.15.0
-matplotlib>=3.7.0
-seaborn>=0.12.0
-
-# API integrations
-requests>=2.31.0
-httpx>=0.24.0
-
-# Cloud deployment
-streamlit>=1.28.0
-streamlit-authenticator>=0.2.0
-
-# Additional utilities
-python-dotenv>=1.0.0
-pydantic>=2.0.0
-jsonschema>=4.0.0
+numpy
+psycopg2-binary
+sqlalchemy
+requests
+python-dotenv
+supabase
+langchain
+langchain-community
+langchain-openai
+python-dateutil
+seaborn
+httpx
+pydantic
+jsonschema
 
 # Optional for enhanced features
 pillow>=10.0.0
