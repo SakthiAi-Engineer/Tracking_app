@@ -14,10 +14,6 @@ import json
 # Get the database URL from secrets
 db_url = st.secrets["DATABASE_URL"]
 
-# Now you can check its type
-st.write("db_url type:", type(db_url))  # should output <class 'str'>
-st.write("db_url:", db_url)
-
 # Database configuration
 SUPABASE_URL = st.secrets["SUPABASE_URL"]
 SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
@@ -26,9 +22,6 @@ DATABASE_URL = st.secrets["DATABASE_URL"]
 # NVIDIA API configuration
 NVIDIA_API_KEY = st.secrets["NVIDIA_API_KEY"]
 NVIDIA_API_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
-st.write("DATABASE_URL secret:", st.secrets["DATABASE_URL"], type(st.secrets["DATABASE_URL"]))
-
-st.write("db_url type:", type(db_url))  # should be <class 'str'>
 
 
 def get_db_connection():
