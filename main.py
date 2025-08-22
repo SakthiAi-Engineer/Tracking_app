@@ -23,7 +23,10 @@ try:
     # Test connection
     with engine.connect() as conn:
         result = conn.execute(text("SELECT NOW();"))
-        st.success(f"✅ Database connected. Server time: {result.scalar()}")
+        # Using a session state flag to show connection status only once
+        if 'db_connected' not in st.session_state:
+            st.success(f"✅ Database connected. Server time: {result.scalar()}")
+            st.session_state.db_connected = True
 except Exception as e:
     st.error(f"❌ DATABASE CONNECTION FAILED: {e}")
     st.error("Please ensure your DATABASE_URL is correctly configured in Streamlit secrets.")
@@ -519,7 +522,8 @@ elif page == "Visualize":
     else:
         matrix = []
         for _, plan_row in frozen_plans.iterrows():
-            plan_data = json.loads(plan_row['data'])
+            # FIX: Do not use json.loads() here. 'data' is already a dict.
+            plan_data = plan_row['data'] 
             status_row = {"PO No": plan_data.get('PO No', ''), "Customer": plan_data.get('Customer', '')}
             
             for process in PROCESS_OPTIONS:
@@ -565,6 +569,7 @@ elif page == "Ask AI":
     
     if st.button("🧹 Clear Conversation"):
         st.session_state.pop("chat_history", None)
+        st.rerun()
     
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = []
@@ -585,7 +590,8 @@ elif page == "Ask AI":
             context = "Frozen Plans Summary:\n"
             if not frozen_plans.empty:
                 for _, row in frozen_plans.head(5).iterrows():
-                    data = json.loads(row['data'])
+                    # FIX: Do not use json.loads() here. 'data' is already a dict.
+                    data = row['data'] 
                     context += f"- PO: {data.get('PO No', 'N/A')}, Customer: {data.get('Customer', 'N/A')}\n"
             
             context += "\nRecent Status Updates:\n"
