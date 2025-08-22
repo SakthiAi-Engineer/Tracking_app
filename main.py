@@ -4,81 +4,57 @@ import os
 from datetime import datetime
 import plotly.express as px
 import psycopg2
-from psycopg2.extras import RealDictCursor
-import requests
 from sqlalchemy import create_engine, text
 import json
+import requests
+from passlib.context import CryptContext
+
+# ---------------- Password Hashing Setup ----------------
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # ---------------- Cloud Configuration ----------------
-
-# st.title("🔗 Supabase DB Connection Test")
-
-# # Read connection string from Streamlit secrets
 try:
     db_url = st.secrets["DATABASE_URL"]
-    st.write("✅ DATABASE_URL loaded from secrets.")
-except Exception as e:
-    st.error(f"❌ Could not load DATABASE_URL: {e}")
-    st.stop()
-
-# Create engine with SSL requirement
-try:
     engine = create_engine(
         db_url,
         connect_args={"sslmode": "require"},
         pool_pre_ping=True
     )
-    st.write("✅ Engine created successfully.")
+    # Test connection
+    with engine.connect() as conn:
+        result = conn.execute(text("SELECT NOW();"))
+        st.success(f"✅ Database connected. Server time: {result.scalar()}")
 except Exception as e:
-    st.error(f"❌ Engine creation failed: {e}")
+    st.error(f"❌ DATABASE CONNECTION FAILED: {e}")
+    st.error("Please ensure your DATABASE_URL is correctly configured in Streamlit secrets.")
     st.stop()
 
-# # Test actual connection
-# try:
-#     with engine.connect() as conn:
-#         result = conn.execute("SELECT NOW();")
-#         row = result.fetchone()
-#         st.success(f"✅ Connection successful. Server time: {row[0]}")
-# except Exception as e:
-#     st.error(f"❌ Connection failed: {e}")
-#test    
-from sqlalchemy import text
-
-with engine.connect() as conn:
-    result = conn.execute(text("SELECT NOW();"))
-    st.success(f"✅ Database connected. Time: {result.scalar()}")
-
-
-# Database configuration
-SUPABASE_URL = st.secrets["SUPABASE_URL"]
-SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
-DATABASE_URL = st.secrets["DATABASE_URL"]
-
-# NVIDIA API configuration
-NVIDIA_API_KEY = st.secrets["NVIDIA_API_KEY"]
+# Database and API configurations from secrets
+SUPABASE_URL = st.secrets.get("SUPABASE_URL")
+SUPABASE_KEY = st.secrets.get("SUPABASE_KEY")
+NVIDIA_API_KEY = st.secrets.get("NVIDIA_API_KEY")
 NVIDIA_API_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 
-db_url = st.secrets["DATABASE_URL"]
-
+# ---------------- Database Initialization ----------------
 def get_db_connection():
-   # """Create database connection using SQLAlchemy"""
-    engine = create_engine(DATABASE_URL)
-    return engine
+    # """Returns a new SQLAlchemy engine instance."""
+    return create_engine(
+        st.secrets["DATABASE_URL"],
+        connect_args={"sslmode": "require"},
+        pool_pre_ping=True
+    )
 
 def init_database():
-    """Initialize database tables"""
+    # """Initialize database tables if they don't exist."""
     engine = get_db_connection()
-    
     with engine.connect() as conn:
-        # Create tables if they don't exist
         conn.execute(text("""
             CREATE TABLE IF NOT EXISTS users (
                 username VARCHAR(50) PRIMARY KEY,
-                password VARCHAR(100),
+                hashed_password VARCHAR(255),
                 role VARCHAR(50)
             )
         """))
-        
         conn.execute(text("""
             CREATE TABLE IF NOT EXISTS frozen_plans (
                 id SERIAL PRIMARY KEY,
@@ -88,7 +64,6 @@ def init_database():
                 uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """))
-        
         conn.execute(text("""
             CREATE TABLE IF NOT EXISTS daily_status (
                 id SERIAL PRIMARY KEY,
@@ -102,7 +77,6 @@ def init_database():
                 timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """))
-        
         conn.execute(text("""
             CREATE TABLE IF NOT EXISTS procurement_data (
                 id SERIAL PRIMARY KEY,
@@ -118,15 +92,12 @@ def init_database():
                 actual_in_house_date DATE
             )
         """))
-        
         conn.commit()
 
 def insert_default_users():
-    """Insert default users"""
+    # """Insert default users with HASHED passwords if no users exist."""
     engine = get_db_connection()
-    
     with engine.connect() as conn:
-        # Check if users already exist
         result = conn.execute(text("SELECT COUNT(*) FROM users"))
         if result.scalar() == 0:
             default_users = [
@@ -142,36 +113,20 @@ def insert_default_users():
                 ("stitch_pack", "stitch123", "stitch_pack"),
                 ("dispatch", "dispatch123", "dispatch")
             ]
-            
             for username, password, role in default_users:
+                hashed_password = pwd_context.hash(password)
                 conn.execute(
-                    text("INSERT INTO users (username, password, role) VALUES (:username, :password, :role)"),
-                    {"username": username, "password": password, "role": role}
+                    text("INSERT INTO users (username, hashed_password, role) VALUES (:username, :hashed_password, :role)"),
+                    {"username": username, "hashed_password": hashed_password, "role": role}
                 )
             conn.commit()
 
 # ---------------- App Config ----------------
 st.set_page_config(page_title="Cloud Textile Tracker", layout="wide")
-
-# Initialize database
 init_database()
 insert_default_users()
 
 # ---------------- Constants ----------------
-USERS = {
-    "admin": "admin123",
-    "user": "user123",
-    "management": "manage123",
-    "planning": "planning123",
-    "procurement": "procure123",
-    "stores": "stores123",
-    "external_weaving": "extweave123",
-    "quality": "quality123",
-    "processing": "process123",
-    "stitch_pack": "stitch123",
-    "dispatch": "dispatch123"
-}
-
 SECTION_ACCESS = {
     "external_weaving": ["External Order", "Weaving"],
     "quality": ["Greige Inspection", "Inspection", "Final Inspection"],
@@ -179,120 +134,133 @@ SECTION_ACCESS = {
     "stitch_pack": ["Stitching", "Packing & Cartoning"],
     "dispatch": ["Shipment"],
 }
-
-process_options = [
+PROCESS_OPTIONS = [
     "External Order", "Weaving", "Greige Inspection", "Processing",
     "Inspection", "Stitching", "Final Inspection", "Packing & Cartoning", "Shipment"
 ]
 
-# ---------------- Database Operations ----------------
-def get_user_role(username):
-    """Get user role from database"""
+# ---------------- Security & User Management ----------------
+def verify_user(username, password):
+    # """Verify user against the database with hashed passwords."""
     engine = get_db_connection()
     with engine.connect() as conn:
         result = conn.execute(
-            text("SELECT role FROM users WHERE username = :username"),
+            text("SELECT hashed_password FROM users WHERE username = :username"),
             {"username": username}
         )
-        return result.scalar()
+        user_row = result.fetchone()
+        if user_row and pwd_context.verify(password, user_row[0]):
+            role_result = conn.execute(
+                text("SELECT role FROM users WHERE username = :username"),
+                {"username": username}
+            )
+            return role_result.scalar()
+    return None
 
+# ---------------- Database Operations ----------------
 def save_frozen_plan(df):
-    """Save frozen plan to database"""
+    # """Save frozen plan, replacing the old one. Handles date serialization."""
     engine = get_db_connection()
     with engine.connect() as conn:
-        # Clear existing plans
+        # This function replaces the entire plan, so deleting first is the intended behavior.
         conn.execute(text("DELETE FROM frozen_plans"))
+        conn.commit() # Commit the delete before inserting new data
         
-        # Insert new plans
         for _, row in df.iterrows():
+            row_dict = row.to_dict()
+            # Convert any datetime/timestamp objects to ISO strings for JSON compatibility
+            for key, value in row_dict.items():
+                if isinstance(value, (datetime, pd.Timestamp)):
+                    row_dict[key] = value.isoformat()
+            
             conn.execute(
                 text("INSERT INTO frozen_plans (po_no, customer, data) VALUES (:po_no, :customer, :data)"),
                 {
                     "po_no": str(row.get('PO No', '')),
                     "customer": str(row.get('Customer', '')),
-                    "data": json.dumps(row.to_dict())
+                    "data": json.dumps(row_dict)
                 }
             )
         conn.commit()
 
 def get_frozen_plans():
-    """Get all frozen plans"""
+    # """Get all frozen plans."""
     engine = get_db_connection()
-    with engine.connect() as conn:
-        result = conn.execute(text("SELECT * FROM frozen_plans ORDER BY uploaded_at DESC"))
-        return pd.DataFrame(result.fetchall())
+    query = text("SELECT * FROM frozen_plans ORDER BY uploaded_at DESC")
+    return pd.read_sql(query, engine)
 
 def save_daily_status(data):
-    """Save daily status update"""
+    # """Save a single daily status update."""
     engine = get_db_connection()
     with engine.connect() as conn:
-        conn.execute(
-            text("""
-                INSERT INTO daily_status 
-                (po_no, customer, process, actual_start, actual_finish, remarks, submitted_by)
-                VALUES (:po_no, :customer, :process, :actual_start, :actual_finish, :remarks, :submitted_by)
-            """),
-            data
-        )
+        conn.execute(text("""
+            INSERT INTO daily_status 
+            (po_no, customer, process, actual_start, actual_finish, remarks, submitted_by)
+            VALUES (:po_no, :customer, :process, :actual_start, :actual_finish, :remarks, :submitted_by)
+        """), data)
         conn.commit()
 
 def get_daily_status():
-    """Get all daily status updates"""
+    # """Get all daily status updates."""
     engine = get_db_connection()
-    with engine.connect() as conn:
-        result = conn.execute(text("SELECT * FROM daily_status ORDER BY timestamp DESC"))
-        return pd.DataFrame(result.fetchall())
+    query = text("SELECT * FROM daily_status ORDER BY timestamp DESC")
+    return pd.read_sql(query, engine)
 
-def save_procurement_data(data_type, df):
-    """Save procurement data"""
+def add_procurement_item(item_data):
+    # """Adds a single new procurement item to the database."""
     engine = get_db_connection()
     with engine.connect() as conn:
-        # Clear existing data for this type
-        conn.execute(text("DELETE FROM procurement_data WHERE type = :type"), {"type": data_type})
-        
-        # Insert new data
+        conn.execute(text("""
+            INSERT INTO procurement_data 
+            (type, item_name, quantity, requested_in_house_date, status)
+            VALUES (:type, :item_name, :quantity, :requested_in_house_date, 'Requested')
+        """), item_data)
+        conn.commit()
+
+def save_bulk_procurement_data(df):
+    # """Saves a DataFrame of new procurement items."""
+    engine = get_db_connection()
+    with engine.connect() as conn:
         for _, row in df.iterrows():
-            conn.execute(
-                text("""
-                    INSERT INTO procurement_data 
-                    (type, item_name, quantity, requested_in_house_date, status, 
-                     procurement_in_house_date, procured_quantity, received, 
-                     received_quantity, actual_in_house_date)
-                    VALUES (:type, :item_name, :quantity, :requested_in_house_date, :status,
-                            :procurement_in_house_date, :procured_quantity, :received,
-                            :received_quantity, :actual_in_house_date)
-                """),
-                {
-                    "type": data_type,
-                    "item_name": str(row.get('Item Name', '')),
-                    "quantity": int(row.get('Quantity', 0)),
-                    "requested_in_house_date": row.get('Requested In-house Date'),
-                    "status": str(row.get('Status', 'Requested')),
-                    "procurement_in_house_date": row.get('Procurement In-house Date'),
-                    "procured_quantity": int(row.get('Procured Quantity', 0)),
-                    "received": str(row.get('Received', 'No')),
-                    "received_quantity": int(row.get('Received Quantity', 0)),
-                    "actual_in_house_date": row.get('Actual In-house Date')
-                }
-            )
+            conn.execute(text("""
+                INSERT INTO procurement_data 
+                (type, item_name, quantity, requested_in_house_date, status)
+                VALUES (:type, :item_name, :quantity, :requested_in_house_date, :status)
+            """), {
+                "type": row.get('Type', ''),
+                "item_name": str(row.get('Item Name', '')),
+                "quantity": int(row.get('Quantity', 0)),
+                "requested_in_house_date": row.get('Requested In-house Date'),
+                "status": "Requested"
+            })
+        conn.commit()
+
+def update_procurement_item(item_id, updates):
+    # """Updates a specific procurement item by its ID."""
+    engine = get_db_connection()
+    set_clause = ", ".join([f"{key} = :{key}" for key in updates.keys()])
+    updates['id'] = item_id
+    with engine.connect() as conn:
+        conn.execute(text(f"UPDATE procurement_data SET {set_clause} WHERE id = :id"), updates)
         conn.commit()
 
 def get_procurement_data(data_type=None):
-    """Get procurement data"""
+    # """Get procurement data, optionally filtered by type."""
     engine = get_db_connection()
-    with engine.connect() as conn:
-        if data_type:
-            result = conn.execute(
-                text("SELECT * FROM procurement_data WHERE type = :type"),
-                {"type": data_type}
-            )
-        else:
-            result = conn.execute(text("SELECT * FROM procurement_data"))
-        return pd.DataFrame(result.fetchall())
+    if data_type:
+        query = text("SELECT * FROM procurement_data WHERE type = :type ORDER BY id")
+        params = {"type": data_type}
+    else:
+        query = text("SELECT * FROM procurement_data ORDER BY id")
+        params = {}
+    return pd.read_sql(query, engine, params=params)
 
 # ---------------- AI Integration ----------------
 def ask_nvidia_ai(prompt, context="", history=""):
-    """Call NVIDIA API for AI responses"""
+    # """Call NVIDIA API for AI responses."""
+    if not NVIDIA_API_KEY:
+        return "Error: NVIDIA_API_KEY is not configured in secrets."
+    
     headers = {
         "Authorization": f"Bearer {NVIDIA_API_KEY}",
         "Content-Type": "application/json"
@@ -323,12 +291,12 @@ Answer in 4-6 concise sentences:
     
     try:
         response = requests.post(NVIDIA_API_URL, headers=headers, json=payload, timeout=30)
-        if response.status_code == 200:
-            return response.json()['choices'][0]['message']['content']
-        else:
-            return f"Error: {response.status_code} - {response.text}"
-    except Exception as e:
+        response.raise_for_status() # Raise an exception for bad status codes
+        return response.json()['choices'][0]['message']['content']
+    except requests.exceptions.RequestException as e:
         return f"Error connecting to NVIDIA API: {str(e)}"
+    except Exception as e:
+        return f"An error occurred: {str(e)}"
 
 # ---------------- Login System ----------------
 if "logged_in" not in st.session_state:
@@ -336,17 +304,20 @@ if "logged_in" not in st.session_state:
     username = st.sidebar.text_input("Username")
     password = st.sidebar.text_input("Password", type="password")
     if st.sidebar.button("Login"):
-        if username in USERS and USERS[username] == password:
-            st.session_state["role"] = username
+        role = verify_user(username, password)
+        if role:
+            st.session_state["role"] = role
+            st.session_state["username"] = username
             st.session_state["logged_in"] = True
             st.rerun()
         else:
-            st.sidebar.error("Invalid login")
+            st.sidebar.error("Invalid username or password")
     st.stop()
 
 role = st.session_state["role"]
 
 with st.sidebar:
+    st.write(f"Logged in as: **{st.session_state['username']}** (`{role}`)")
     st.markdown("---")
     if st.button("Logout"):
         for k in list(st.session_state.keys()):
@@ -357,145 +328,105 @@ with st.sidebar:
 if role == "admin":
     page = st.sidebar.radio(
         "Go to",
-        [
-            "Dashboard", "Planning", "Procurement", "Stores", "Upload",
-            "Daily Status Update", "Visualize", "Logs", "Ask AI"
-        ]
+        ["Dashboard", "Upload", "Planning", "Procurement", "Stores", 
+         "Daily Status Update", "Visualize", "Logs", "Ask AI"]
     )
-elif role == "user":
-    page = st.sidebar.radio("Go to", ["Dashboard", "Daily Status Update", "Visualize", "Logs", "Ask AI"])
+elif role == "planning":
+    page = st.sidebar.radio("Go to", ["Dashboard", "Planning", "Visualize", "Ask AI"])
+elif role == "procurement":
+    page = st.sidebar.radio("Go to", ["Dashboard", "Procurement", "Visualize", "Ask AI"])
+elif role == "stores":
+    page = st.sidebar.radio("Go to", ["Dashboard", "Stores", "Visualize", "Ask AI"])
 elif role == "management":
-    page = st.sidebar.radio("Go to", ["Dashboard", "Visualize", "Ask AI"])
-elif role in ["planning", "procurement", "stores"]:
-    page = st.sidebar.radio("Go to", ["Dashboard", role.capitalize(), "Visualize", "Ask AI"]) 
+    page = st.sidebar.radio("Go to", ["Dashboard", "Visualize", "Logs", "Ask AI"])
 elif role in SECTION_ACCESS:
-    page = st.sidebar.radio("Go to", ["Dashboard", "Daily Status Update", "Visualize", "Ask AI"]) 
-else:
-    page = st.sidebar.radio("Go to", ["Dashboard"])
+    page = st.sidebar.radio("Go to", ["Dashboard", "Daily Status Update", "Visualize", "Ask AI"])
+else: # Includes 'user' role
+    page = st.sidebar.radio("Go to", ["Dashboard", "Visualize", "Logs", "Ask AI"])
 
-# ---------------- Dashboard ----------------
+# ---------------- Main App Pages ----------------
+
 if page == "Dashboard":
     st.title("🎯 Cloud Textile Tracker Dashboard")
-    
-    # Get data from database
     procurement_df = get_procurement_data()
-    frozen_plans_df = get_frozen_plans()
-    daily_status_df = get_daily_status()
     
-    # Calculate metrics
-    total_planned = len(procurement_df) if not procurement_df.empty else 0
-    total_procured = len(procurement_df[procurement_df['status'] == 'Procured']) if not procurement_df.empty else 0
-    total_received = len(procurement_df[procurement_df['received'] == 'Yes']) if not procurement_df.empty else 0
-    
+    if not procurement_df.empty:
+        total_planned = len(procurement_df)
+        total_procured = len(procurement_df[procurement_df['status'] == 'Procured'])
+        total_received = len(procurement_df[procurement_df['received'] == 'Yes'])
+        completion_rate = (total_received / max(total_planned, 1)) * 100
+    else:
+        total_planned = total_procured = total_received = 0
+        completion_rate = 0
+
     st.markdown("---")
     c1, c2, c3, c4 = st.columns(4)
-    with c1:
-        st.metric("Total Planned", total_planned)
-    with c2:
-        st.metric("Total Procured", total_procured)
-    with c3:
-        st.metric("Total Received", total_received)
-    with c4:
-        completion_rate = (total_received / max(total_planned, 1)) * 100
-        st.metric("Overall Completion", f"{completion_rate:.1f}%")
-    
-    # Data visualization
+    c1.metric("Total Planned Items", total_planned)
+    c2.metric("Items Procured", total_procured)
+    c3.metric("Items Received", total_received)
+    c4.metric("Overall Completion", f"{completion_rate:.1f}%")
+
     if not procurement_df.empty:
         st.markdown("---")
         st.subheader("📊 Material Analysis")
-        
-        # Status distribution
-        status_counts = procurement_df['status'].value_counts()
-        fig = px.pie(values=status_counts.values, names=status_counts.index, title="Procurement Status Distribution")
-        st.plotly_chart(fig, use_container_width=True)
-        
-        # Type distribution
-        type_counts = procurement_df['type'].value_counts()
-        fig2 = px.bar(x=type_counts.index, y=type_counts.values, title="Material Types")
-        st.plotly_chart(fig2, use_container_width=True)
+        col1, col2 = st.columns(2)
+        with col1:
+            status_counts = procurement_df['status'].value_counts()
+            fig = px.pie(values=status_counts.values, names=status_counts.index, title="Procurement Status Distribution")
+            st.plotly_chart(fig, use_container_width=True)
+        with col2:
+            type_counts = procurement_df['type'].value_counts()
+            fig2 = px.bar(x=type_counts.index, y=type_counts.values, title="Material Types", labels={'x': 'Type', 'y': 'Count'})
+            st.plotly_chart(fig2, use_container_width=True)
 
-# ---------------- Upload ----------------
-# if page == "Upload":
-#     st.title("Upload Monthly Target Plan")
-#     uploaded_file = st.file_uploader("Upload Excel File", type=["xlsx"])
-#     if uploaded_file:
-#         df = pd.read_excel(uploaded_file)
-#         save_frozen_plan(df)
-#         st.success("Target Plan uploaded and saved to cloud database!")
-#         st.dataframe(df)
-if page == "Upload":
-    st.title("📤 Upload Excel Plan")
-
-    uploaded_file = st.file_uploader("Upload Excel", type=["xlsx"])
-
-    if uploaded_file is not None:
+elif page == "Upload":
+    st.title("📤 Upload Monthly Target Plan")
+    uploaded_file = st.file_uploader("Upload Excel File", type=["xlsx"])
+    if uploaded_file:
         try:
-            # Read Excel
             df = pd.read_excel(uploaded_file)
-
-            # 🔧 Fix: Convert pandas.Timestamp to string (ISO format)
-            df = df.applymap(lambda x: x.isoformat() if isinstance(x, pd.Timestamp) else x)
-
-            # Convert to JSON-friendly dict
-            json_data = df.to_dict(orient="records")
-
-            # Insert into DB (if needed)
-            with engine.begin() as conn:
-                conn.execute(orders_table.insert(), json_data)
-
-            st.success("✅ Excel uploaded and saved to database successfully!")
-
-            # Show preview
+            save_frozen_plan(df)
+            st.success("Target Plan uploaded and saved to cloud database!")
             st.subheader("📋 Preview of Uploaded Data")
             st.dataframe(df.head())
-
         except Exception as e:
             st.error(f"❌ Error processing file: {e}")
 
-
-# ---------------- Planning ----------------
-if page == "Planning":
+elif page == "Planning":
     st.title("Planning Module")
-    division = st.selectbox("Select Division", ["Procurement", "Production", "Dispatch"])
+    st.subheader("Procurement Requirement Entry")
     
-    if division == "Procurement":
-        st.subheader("Procurement Requirement Entry")
-        
-        # Bulk upload
-        bulk_file = st.file_uploader("Upload Excel/CSV", type=["xlsx", "csv"], key="bulk_upload")
+    # Bulk upload
+    with st.expander("Bulk Upload from Excel/CSV"):
+        bulk_file = st.file_uploader("Upload File", type=["xlsx", "csv"], key="bulk_upload")
         if bulk_file:
             bulk_df = pd.read_excel(bulk_file) if bulk_file.name.endswith(".xlsx") else pd.read_csv(bulk_file)
             required_cols = {"Item Name", "Quantity", "Requested In-house Date", "Type"}
             if required_cols.issubset(set(bulk_df.columns)):
-                for req_type in ["Raw Material", "Carton box", "Accessories"]:
-                    df_type = bulk_df[bulk_df["Type"].str.lower() == req_type.lower()]
-                    if not df_type.empty:
-                        df_type = df_type.copy()
-                        df_type["Status"] = "Requested"
-                        save_procurement_data(req_type, df_type)
+                save_bulk_procurement_data(bulk_df)
                 st.success("Bulk requirements uploaded!")
+                st.dataframe(bulk_df.head())
             else:
                 st.error(f"File must contain columns: {', '.join(required_cols)}")
-        
-        # Individual entry
-        req_type = st.selectbox("Select Requirement Type", ["Raw Material", "Carton box", "Accessories"])
-        with st.form(f"add_{req_type}_form"):
-            item_name = st.text_input("Item Name")
-            quantity = st.number_input("Quantity", min_value=1, step=1)
-            req_date = st.date_input("Requested In-house Date", value=datetime.today())
-            submit = st.form_submit_button("Add Requirement")
-        
-        if submit and item_name:
-            new_row = pd.DataFrame([{
-                "Item Name": item_name,
-                "Quantity": quantity,
-                "Requested In-house Date": req_date,
-                "Status": "Requested"
-            }])
-            save_procurement_data(req_type, new_row)
-            st.success(f"{req_type} requirement added.")
 
-# ---------------- Procurement ----------------
+    # Individual entry
+    st.markdown("---")
+    st.subheader("Add Individual Requirement")
+    req_type = st.selectbox("Select Requirement Type", ["Raw Material", "Carton box", "Accessories"])
+    with st.form(f"add_{req_type}_form", clear_on_submit=True):
+        item_name = st.text_input("Item Name")
+        quantity = st.number_input("Quantity", min_value=1, step=1)
+        req_date = st.date_input("Requested In-house Date", value=datetime.today())
+        submit = st.form_submit_button("Add Requirement")
+        if submit and item_name:
+            add_procurement_item({
+                "type": req_type,
+                "item_name": item_name,
+                "quantity": quantity,
+                "requested_in_house_date": req_date
+            })
+            st.success(f"{req_type} requirement for '{item_name}' added.")
+
 elif page == "Procurement":
     st.title("Procurement Module")
     req_type = st.selectbox("Select Requirement Type", ["Raw Material", "Carton box", "Accessories"])
@@ -503,18 +434,25 @@ elif page == "Procurement":
     
     if not data.empty:
         st.dataframe(data)
-        idx = st.number_input("Select Row to Update", min_value=0, max_value=len(data)-1, step=1)
-        inhouse_date = st.date_input("Procurement In-house Date", value=datetime.today())
-        proc_qty = st.number_input("Procured Quantity", min_value=1, step=1, value=int(data.iloc[idx]["Quantity"]))
+        item_ids = data['id'].tolist()
+        selected_id = st.selectbox("Select Item ID to Update", item_ids)
         
-        if st.button("Update Procurement"):
-            data.loc[idx, "Procurement In-house Date"] = inhouse_date
-            data.loc[idx, "Procured Quantity"] = proc_qty
-            data.loc[idx, "Status"] = "Procured"
-            save_procurement_data(req_type, data)
-            st.success("Procurement info updated.")
+        selected_row = data[data['id'] == selected_id].iloc[0]
+        
+        with st.form(f"update_proc_{selected_id}"):
+            inhouse_date = st.date_input("Procurement In-house Date", value=pd.to_datetime(selected_row['procurement_in_house_date'] or datetime.today()).date())
+            proc_qty = st.number_input("Procured Quantity", min_value=0, step=1, value=int(selected_row['procured_quantity'] or selected_row['quantity']))
+            if st.form_submit_button("Update Procurement Status to 'Procured'"):
+                update_procurement_item(selected_id, {
+                    "procurement_in_house_date": inhouse_date,
+                    "procured_quantity": proc_qty,
+                    "status": "Procured"
+                })
+                st.success(f"Procurement info updated for item ID {selected_id}.")
+                st.rerun()
+    else:
+        st.info(f"No procurement requests for '{req_type}'.")
 
-# ---------------- Stores ----------------
 elif page == "Stores":
     st.title("Stores Module")
     req_type = st.selectbox("Select Item Type", ["Raw Material", "Carton box", "Accessories"])
@@ -522,212 +460,142 @@ elif page == "Stores":
     
     if not data.empty:
         st.dataframe(data)
-        idx = st.number_input("Select Row to Confirm Receipt", min_value=0, max_value=len(data)-1, step=1)
-        received = st.selectbox("Received?", ["No", "Yes"])
-        rec_qty = st.number_input("Received Quantity", min_value=0, step=1, value=int(data.iloc[idx]["Quantity"]))
-        rec_date = st.date_input("Actual In-house Date", value=datetime.today())
-        
-        if st.button("Confirm Receipt"):
-            data.loc[idx, "Received"] = received
-            data.loc[idx, "Received Quantity"] = rec_qty
-            data.loc[idx, "Actual In-house Date"] = rec_date
-            save_procurement_data(req_type, data)
-            st.success("Receipt confirmed.")
+        item_ids = data['id'].tolist()
+        selected_id = st.selectbox("Select Item ID to Confirm Receipt", item_ids)
 
-# ---------------- Daily Status Update ----------------
-if page == "Daily Status Update":
+        selected_row = data[data['id'] == selected_id].iloc[0]
+
+        with st.form(f"update_stores_{selected_id}"):
+            received = st.selectbox("Received?", ["No", "Yes"], index=1 if selected_row['received'] == 'Yes' else 0)
+            rec_qty = st.number_input("Received Quantity", min_value=0, step=1, value=int(selected_row['received_quantity'] or selected_row['procured_quantity'] or 0))
+            rec_date = st.date_input("Actual In-house Date", value=pd.to_datetime(selected_row['actual_in_house_date'] or datetime.today()).date())
+            if st.form_submit_button("Confirm Receipt"):
+                update_procurement_item(selected_id, {
+                    "received": received,
+                    "received_quantity": rec_qty,
+                    "actual_in_house_date": rec_date
+                })
+                st.success(f"Receipt confirmed for item ID {selected_id}.")
+                st.rerun()
+    else:
+        st.info(f"No items of type '{req_type}' to receive.")
+
+elif page == "Daily Status Update":
     st.title("📤 Daily Status Update")
-    
-    frozen_plans = get_frozen_plans()
-    if frozen_plans.empty:
-        st.error("No target plans uploaded yet.")
+    frozen_plans_df = get_frozen_plans()
+    if frozen_plans_df.empty:
+        st.error("No target plans uploaded yet. Please go to the 'Upload' page.")
         st.stop()
     
-    # Get unique POs from frozen plans
-    po_list = []
-    for _, row in frozen_plans.iterrows():
-        data = json.loads(row['data'])
-        po_list.append(data.get('PO No', ''))
+    po_list = sorted(frozen_plans_df['po_no'].unique().tolist())
+    selected_po = st.selectbox("Select PO No", po_list)
     
-    selected_po = st.selectbox("Select PO No", list(set(po_list)))
-    
-    # Get customer for selected PO
-    customer = ""
-    for _, row in frozen_plans.iterrows():
-        data = json.loads(row['data'])
-        if data.get('PO No') == selected_po:
-            customer = data.get('Customer', '')
-            break
-    
+    customer = frozen_plans_df[frozen_plans_df['po_no'] == selected_po]['customer'].iloc[0]
     st.text_input("Customer", customer, disabled=True)
     
-    # Process updates
-    allowed_sections = process_options if role not in SECTION_ACCESS else SECTION_ACCESS[role]
+    allowed_sections = PROCESS_OPTIONS if role not in SECTION_ACCESS else SECTION_ACCESS[role]
     
-    for process in process_options:
-        if process not in allowed_sections:
-            continue
-            
-        st.subheader(process)
-        submitted_by = st.text_input("Your Name", key=f"submitter_{process}")
-        start = st.date_input(f"{process} Start", key=f"start_{process}")
-        finish = st.date_input(f"{process} Finish", key=f"finish_{process}")
-        remarks = st.text_area("Remarks", key=f"remarks_{process}")
-        
-        if st.button(f"Submit {process}", key=f"submit_{process}"):
-            if not submitted_by:
-                st.error("Your name is mandatory")
-            else:
-                save_daily_status({
-                    "po_no": selected_po,
-                    "customer": customer,
-                    "process": process,
-                    "actual_start": start,
-                    "actual_finish": finish,
-                    "remarks": remarks,
-                    "submitted_by": submitted_by
-                })
-                st.success(f"{process} updated for {selected_po}")
+    for process in allowed_sections:
+        with st.expander(f"Update Status for: {process}"):
+            with st.form(key=f"form_{process}_{selected_po}", clear_on_submit=True):
+                start = st.date_input("Actual Start Date", key=f"start_{process}")
+                finish = st.date_input("Actual Finish Date", key=f"finish_{process}")
+                remarks = st.text_area("Remarks", key=f"remarks_{process}")
+                if st.form_submit_button(f"Submit for {process}"):
+                    save_daily_status({
+                        "po_no": selected_po, "customer": customer, "process": process,
+                        "actual_start": start, "actual_finish": finish, "remarks": remarks,
+                        "submitted_by": st.session_state["username"]
+                    })
+                    st.success(f"{process} status updated for PO {selected_po}")
 
-# ---------------- Visualize ----------------
-if page == "Visualize":
-    st.title("Process Completion Matrix")
-    
+elif page == "Visualize":
+    st.title("📊 Process Completion Matrix")
     frozen_plans = get_frozen_plans()
     daily_status = get_daily_status()
     
     if frozen_plans.empty:
         st.warning("Please upload a target plan first.")
     else:
-        # Create visualization matrix
         matrix = []
-        for _, row in frozen_plans.iterrows():
-            data = json.loads(row['data'])
-            status_row = {"PO No": data.get('PO No', ''), "Customer": data.get('Customer', '')}
+        for _, plan_row in frozen_plans.iterrows():
+            plan_data = json.loads(plan_row['data'])
+            status_row = {"PO No": plan_data.get('PO No', ''), "Customer": plan_data.get('Customer', '')}
             
-            allowed_sections = process_options if role not in SECTION_ACCESS else SECTION_ACCESS[role]
-            
-            for process in process_options:
-                if process not in allowed_sections:
-                    continue
-                    
-                plan_end = data.get(f"{process} Finish")
+            for process in PROCESS_OPTIONS:
+                plan_end_str = plan_data.get(f"{process} Finish")
                 
-                # Check actual status
-                actual_rows = daily_status[
-                    (daily_status["po_no"] == data.get('PO No', '')) & 
+                actual_updates = daily_status[
+                    (daily_status["po_no"] == plan_data.get('PO No', '')) & 
                     (daily_status["process"] == process)
                 ]
                 
-                if not actual_rows.empty:
-                    actual_end = actual_rows.iloc[0]["actual_finish"]
-                    if pd.notna(actual_end) and pd.notna(plan_end):
-                        delay_days = (pd.to_datetime(actual_end) - pd.to_datetime(plan_end)).days
-                        if delay_days > 0:
-                            status = f"🟥 Delayed ({delay_days}d)"
-                        elif delay_days < 0:
-                            status = f"🟩 Early ({abs(delay_days)}d)"
-                        else:
-                            status = "🟨 On Time"
+                status = "⬜ Not Started"
+                if not actual_updates.empty:
+                    latest_update = actual_updates.iloc[0]
+                    actual_end = latest_update["actual_finish"]
+                    if actual_end and plan_end_str:
+                        try:
+                            delay_days = (pd.to_datetime(actual_end).date() - pd.to_datetime(plan_end_str).date()).days
+                            if delay_days > 0: status = f"🟥 Delayed ({delay_days}d)"
+                            elif delay_days < 0: status = f"🟩 Early ({abs(delay_days)}d)"
+                            else: status = "🟨 On Time"
+                        except (ValueError, TypeError):
+                            status = "🔵 In Progress (Date Error)"
                     else:
                         status = "🔵 In Progress"
-                else:
-                    status = "⬜ Not Started"
-                
                 status_row[process] = status
             matrix.append(status_row)
-        
+            
         status_df = pd.DataFrame(matrix)
         st.dataframe(status_df, use_container_width=True)
 
-# ---------------- Logs ----------------
-if page == "Logs":
-    st.title("Daily Logs")
+elif page == "Logs":
+    st.title("📋 Daily Status Logs")
     daily_status = get_daily_status()
-    
     if not daily_status.empty:
         st.dataframe(daily_status)
-        csv = daily_status.to_csv(index=False)
-        st.download_button(
-            "Download Log as CSV",
-            csv,
-            "log_export.csv",
-            "text/csv"
-        )
+        csv = daily_status.to_csv(index=False).encode('utf-8')
+        st.download_button("Download Log as CSV", csv, "log_export.csv", "text/csv")
     else:
         st.warning("No logs available.")
 
-# === Unlock POs / Unlock Process (admin placeholders retained) ===
-if page == "Unlock POs" and role == "admin":
-    st.title("Unlock PO Data for Editing")
-    if os.path.exists(FREEZE_FILE):
-        locked_pos = [po for po in pd.read_csv(FREEZE_FILE)["PO No"].unique()]
-        if locked_pos:
-            selected_unlock_po = st.selectbox("Select PO to Unlock", locked_pos)
-            if st.button("Unlock Selected PO"):
-                st.success(f"PO {selected_unlock_po} has been unlocked (placeholder logic).")
-        else:
-            st.info("No locked POs to unlock.")
-    else:
-        st.info("No plan uploaded yet.")
-
-if page == "Unlock Process" and role == "admin":
-    st.title("Unlock Individual Process")
-    if os.path.exists(FREEZE_FILE):
-        po_list = pd.read_csv(FREEZE_FILE)["PO No"].unique()
-        selected_po = st.selectbox("Select PO", po_list)
-        selected_process = st.selectbox("Select Process", process_options)
-        if st.button("Unlock Process"):
-            st.success(f"Process '{selected_process}' for PO '{selected_po}' has been unlocked (placeholder logic).")
-    else:
-        st.info("No plan uploaded yet.")
-
-# ---------------- Ask AI ----------------
-if page == "Ask AI":
+elif page == "Ask AI":
     st.title("🤖 Ask AI – Textile Tracker Assistant")
     
     if st.button("🧹 Clear Conversation"):
         st.session_state.pop("chat_history", None)
-        st.rerun()
     
-    # Chat memory
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = []
-    
-    # Render chat history
+
     for role_msg, content in st.session_state.chat_history:
-        st.chat_message("user" if role_msg == "user" else "assistant").write(content)
-    
-    # Chat input
-    user_query = st.chat_input("Ask about POs, delays, processes, customers...")
-    
-    if user_query:
+        with st.chat_message("user" if role_msg == "user" else "assistant"):
+            st.write(content)
+            
+    if user_query := st.chat_input("Ask about POs, delays, processes, customers..."):
         st.chat_message("user").write(user_query)
         st.session_state.chat_history.append(["user", user_query])
         
-        # Prepare context from database
-        frozen_plans = get_frozen_plans()
-        daily_status = get_daily_status()
-        procurement_data = get_procurement_data()
-        
-        context = ""
-        
-        # Add frozen plans context
-        if not frozen_plans.empty:
-            context += "Frozen Plans:\n"
-            for _, row in frozen_plans.head(5).iterrows():
-                data = json.loads(row['data'])
-                context += f"PO: {data.get('PO No', '')}, Customer: {data.get('Customer', '')}\n"
-        
-        # Add daily status context
-        if not daily_status.empty:
-            context += "\nRecent Status Updates:\n"
-            for _, row in daily_status.head(5).iterrows():
-                context += f"PO: {row['po_no']}, Process: {row['process']}, Status: {row['actual_finish']}\n"
-        
-        history_text = "\n".join([f"{r.upper()}: {c}" for r, c in st.session_state.chat_history[-4:]])
-        
         with st.spinner("Thinking…"):
+            # Prepare context
+            frozen_plans = get_frozen_plans()
+            daily_status = get_daily_status()
+            
+            context = "Frozen Plans Summary:\n"
+            if not frozen_plans.empty:
+                for _, row in frozen_plans.head(5).iterrows():
+                    data = json.loads(row['data'])
+                    context += f"- PO: {data.get('PO No', 'N/A')}, Customer: {data.get('Customer', 'N/A')}\n"
+            
+            context += "\nRecent Status Updates:\n"
+            if not daily_status.empty:
+                for _, row in daily_status.head(5).iterrows():
+                    finish_date = row['actual_finish'] or "In Progress"
+                    context += f"- PO: {row['po_no']}, Process: {row['process']}, Finish Date: {finish_date}\n"
+            
+            history_text = "\n".join([f"{r.upper()}: {c}" for r, c in st.session_state.chat_history[-4:]])
+            
             answer = ask_nvidia_ai(user_query, context, history_text)
         
         st.chat_message("assistant").write(answer)
