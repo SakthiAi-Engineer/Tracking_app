@@ -44,7 +44,7 @@ def init_database():
     """Initialize database tables"""
     engine = get_db_connection()
     
-    with engine.begin() as conn:
+    with engine.connect() as conn:
         # Create tables if they don't exist
         conn.execute(text("""
             CREATE TABLE IF NOT EXISTS users (
@@ -129,7 +129,7 @@ def insert_default_users():
 st.set_page_config(page_title="Cloud Textile Tracker", layout="wide")
 
 # Initialize database
-engine = init_database()
+init_database()
 insert_default_users()
 
 # ---------------- Constants ----------------
