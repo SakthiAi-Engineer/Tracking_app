@@ -415,14 +415,43 @@ if page == "Dashboard":
         st.plotly_chart(fig2, use_container_width=True)
 
 # ---------------- Upload ----------------
-if page == "Upload":
-    st.title("Upload Monthly Target Plan")
-    uploaded_file = st.file_uploader("Upload Excel File", type=["xlsx"])
-    if uploaded_file:
-        df = pd.read_excel(uploaded_file)
-        save_frozen_plan(df)
-        st.success("Target Plan uploaded and saved to cloud database!")
-        st.dataframe(df)
+# if page == "Upload":
+#     st.title("Upload Monthly Target Plan")
+#     uploaded_file = st.file_uploader("Upload Excel File", type=["xlsx"])
+#     if uploaded_file:
+#         df = pd.read_excel(uploaded_file)
+#         save_frozen_plan(df)
+#         st.success("Target Plan uploaded and saved to cloud database!")
+#         st.dataframe(df)
+def upload_page():
+    st.title("📤 Upload Excel Plan")
+
+    uploaded_file = st.file_uploader("Upload Excel", type=["xlsx"])
+
+    if uploaded_file is not None:
+        try:
+            # Read Excel
+            df = pd.read_excel(uploaded_file)
+
+            # 🔧 Fix: Convert pandas.Timestamp to string (ISO format)
+            df = df.applymap(lambda x: x.isoformat() if isinstance(x, pd.Timestamp) else x)
+
+            # Convert to JSON-friendly dict
+            json_data = df.to_dict(orient="records")
+
+            # Insert into DB (if needed)
+            with engine.begin() as conn:
+                conn.execute(orders_table.insert(), json_data)
+
+            st.success("✅ Excel uploaded and saved to database successfully!")
+
+            # Show preview
+            st.subheader("📋 Preview of Uploaded Data")
+            st.dataframe(df.head())
+
+        except Exception as e:
+            st.error(f"❌ Error processing file: {e}")
+
 
 # ---------------- Planning ----------------
 if page == "Planning":
