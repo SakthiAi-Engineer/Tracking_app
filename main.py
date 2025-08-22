@@ -19,19 +19,18 @@ DATABASE_URL = st.secrets["DATABASE_URL"]
 NVIDIA_API_KEY = st.secrets["NVIDIA_API_KEY"]
 NVIDIA_API_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 
-# ---------------- Database Setup ----------------
-st.write("Secrets loaded:", list(st.secrets.keys()))
-
+# ---------- Database Connection ----------
 def get_db_connection():
-    """Create database connection using SQLAlchemy"""
+    # Always access secrets in dict-style, never with dot notation
     db_url = st.secrets["DATABASE_URL"]
 
-    # Fix Supabase giving `postgres://` instead of `postgresql://`
+    # Supabase sometimes gives postgres:// but SQLAlchemy needs postgresql://
     if db_url.startswith("postgres://"):
         db_url = db_url.replace("postgres://", "postgresql://", 1)
 
     engine = create_engine(db_url)
     return engine
+
 #def get_db_connection():
    # """Create database connection using SQLAlchemy"""
    # engine = create_engine(DATABASE_URL)
