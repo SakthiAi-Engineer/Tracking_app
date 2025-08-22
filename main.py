@@ -10,6 +10,40 @@ from sqlalchemy import create_engine, text
 import json
 
 # ---------------- Cloud Configuration ----------------
+# db_test.py
+import streamlit as st
+from sqlalchemy import create_engine
+
+st.title("🔗 Supabase DB Connection Test")
+
+# Read connection string from Streamlit secrets
+try:
+    db_url = st.secrets["DATABASE_URL"]
+    st.write("✅ DATABASE_URL loaded from secrets.")
+except Exception as e:
+    st.error(f"❌ Could not load DATABASE_URL: {e}")
+    st.stop()
+
+# Create engine with SSL requirement
+try:
+    engine = create_engine(
+        db_url,
+        connect_args={"sslmode": "require"},
+        pool_pre_ping=True
+    )
+    st.write("✅ Engine created successfully.")
+except Exception as e:
+    st.error(f"❌ Engine creation failed: {e}")
+    st.stop()
+
+# Test actual connection
+try:
+    with engine.connect() as conn:
+        result = conn.execute("SELECT NOW();")
+        row = result.fetchone()
+        st.success(f"✅ Connection successful. Server time: {row[0]}")
+except Exception as e:
+    st.error(f"❌ Connection failed: {e}")
 
 # Database configuration
 SUPABASE_URL = st.secrets["SUPABASE_URL"]
