@@ -16,10 +16,10 @@ import json
 # # Read connection string from Streamlit secrets
 try:
     db_url = st.secrets["DATABASE_URL"]
-    #st.write("✅ DATABASE_URL loaded from secrets.")
-# except Exception as e:
-#     st.error(f"❌ Could not load DATABASE_URL: {e}")
-#     st.stop()
+    st.write("✅ DATABASE_URL loaded from secrets.")
+except Exception as e:
+    st.error(f"❌ Could not load DATABASE_URL: {e}")
+    st.stop()
 
 # Create engine with SSL requirement
 try:
