@@ -11,12 +11,12 @@ import json
 
 # ---------------- Cloud Configuration ----------------
 # Database configuration
-SUPABASE_URL = str(st.secrets["SUPABASE_URL"])
-SUPABASE_KEY = str(st.secrets["SUPABASE_KEY"])
-DATABASE_URL = str(st.secrets["DATABASE_URL"])
+SUPABASE_URL = st.secrets["SUPABASE_URL"]
+SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
+DATABASE_URL = st.secrets["DATABASE_URL"]
 
 # NVIDIA API configuration
-NVIDIA_API_KEY = str(st.secrets["NVIDIA_API_KEY"])
+NVIDIA_API_KEY = st.secrets["NVIDIA_API_KEY"]
 NVIDIA_API_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 
 # ---------------- Database Setup ----------------
