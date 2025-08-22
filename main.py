@@ -40,7 +40,7 @@ def init_database():
     """Initialize database tables"""
     engine = get_db_connection()
     
-    with engine.connect() as conn:
+    with engine.begin() as conn:
         # Create tables if they don't exist
         conn.execute(text("""
             CREATE TABLE IF NOT EXISTS users (
