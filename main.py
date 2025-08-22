@@ -20,7 +20,8 @@ NVIDIA_API_KEY = st.secrets["NVIDIA_API_KEY"]
 NVIDIA_API_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 st.write("DATABASE_URL secret:", st.secrets["DATABASE_URL"], type(st.secrets["DATABASE_URL"]))
 
-st.write("Secrets loaded:", list(st.secrets.keys()))
+st.write("db_url type:", type(db_url))  # should be <class 'str'>
+
 
 def get_db_connection():
     db_url = st.secrets["DATABASE_URL"]
