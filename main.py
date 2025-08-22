@@ -10,9 +10,6 @@ from sqlalchemy import create_engine, text
 import json
 
 # ---------------- Cloud Configuration ----------------
-# db_test.py
-import streamlit as st
-from sqlalchemy import create_engine
 
 st.title("🔗 Supabase DB Connection Test")
 
@@ -44,6 +41,13 @@ try:
         st.success(f"✅ Connection successful. Server time: {row[0]}")
 except Exception as e:
     st.error(f"❌ Connection failed: {e}")
+#test    
+from sqlalchemy import text
+
+with engine.connect() as conn:
+    result = conn.execute(text("SELECT NOW();"))
+    st.success(f"✅ Database connected. Time: {result.scalar()}")
+
 
 # Database configuration
 SUPABASE_URL = st.secrets["SUPABASE_URL"]
