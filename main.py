@@ -20,47 +20,10 @@ NVIDIA_API_KEY = st.secrets["NVIDIA_API_KEY"]
 NVIDIA_API_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 st.write("DATABASE_URL secret:", st.secrets["DATABASE_URL"], type(st.secrets["DATABASE_URL"]))
 
-from sqlalchemy import create_engine
-import streamlit as st
-
 def get_db_connection():
     db_url = st.secrets["DATABASE_URL"]
-
-    # Ensure sslmode=require is present
-    if "sslmode" not in db_url:
-        if "?" in db_url:
-            db_url += "&sslmode=require"
-        else:
-            db_url += "?sslmode=require"
-
-    try:
-        # First attempt with whatever port is in DATABASE_URL
-        engine = create_engine(db_url)
-        conn = engine.connect()
-        conn.close()
-        st.success("✅ Connected to database successfully (default port).")
-        return engine
-    except Exception as e1:
-        st.warning(f"Default port failed: {e1}")
-        # Try switching between pooled (6543) and direct (5432)
-        if ":6543/" in db_url:
-            db_url = db_url.replace(":6543/", ":5432/")
-        elif ":5432/" in db_url:
-            db_url = db_url.replace(":5432/", ":6543/")
-        else:
-            raise
-
-        try:
-            engine = create_engine(db_url)
-            conn = engine.connect()
-            conn.close()
-            st.success("✅ Connected to database successfully (alternate port).")
-            return engine
-        except Exception as e2:
-            st.error(f"❌ Could not connect to database. Tried both ports. Error: {e2}")
-            raise
-
-
+    engine = create_engine(db_url)
+    return engine
 
 #def get_db_connection():
    # """Create database connection using SQLAlchemy"""
