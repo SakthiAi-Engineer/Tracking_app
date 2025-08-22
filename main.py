@@ -33,14 +33,14 @@ except Exception as e:
     st.error(f"❌ Engine creation failed: {e}")
     st.stop()
 
-# Test actual connection
-try:
-    with engine.connect() as conn:
-        result = conn.execute("SELECT NOW();")
-        row = result.fetchone()
-        st.success(f"✅ Connection successful. Server time: {row[0]}")
-except Exception as e:
-    st.error(f"❌ Connection failed: {e}")
+# # Test actual connection
+# try:
+#     with engine.connect() as conn:
+#         result = conn.execute("SELECT NOW();")
+#         row = result.fetchone()
+#         st.success(f"✅ Connection successful. Server time: {row[0]}")
+# except Exception as e:
+#     st.error(f"❌ Connection failed: {e}")
 #test    
 from sqlalchemy import text
 
@@ -423,7 +423,7 @@ if page == "Dashboard":
 #         save_frozen_plan(df)
 #         st.success("Target Plan uploaded and saved to cloud database!")
 #         st.dataframe(df)
-def upload_page():
+if page == "Upload":
     st.title("📤 Upload Excel Plan")
 
     uploaded_file = st.file_uploader("Upload Excel", type=["xlsx"])
