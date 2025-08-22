@@ -22,11 +22,20 @@ NVIDIA_API_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 # ---------------- Database Setup ----------------
 st.write("DATABASE_URL from secrets:", st.secrets["DATABASE_URL"])
 
-
 def get_db_connection():
     """Create database connection using SQLAlchemy"""
-    engine = create_engine(DATABASE_URL)
+    db_url = st.secrets["DATABASE_URL"]
+
+    # Fix Supabase giving `postgres://` instead of `postgresql://`
+    if db_url.startswith("postgres://"):
+        db_url = db_url.replace("postgres://", "postgresql://", 1)
+
+    engine = create_engine(db_url)
     return engine
+#def get_db_connection():
+   # """Create database connection using SQLAlchemy"""
+   # engine = create_engine(DATABASE_URL)
+   # return engine
 
 def init_database():
     """Initialize database tables"""
