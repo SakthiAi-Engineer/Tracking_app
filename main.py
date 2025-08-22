@@ -125,7 +125,7 @@ def insert_default_users():
 st.set_page_config(page_title="Cloud Textile Tracker", layout="wide")
 
 # Initialize database
-init_database()
+engine = init_database()
 insert_default_users()
 
 # ---------------- Constants ----------------
