@@ -11,9 +11,6 @@ import json
 
 # ---------------- Cloud Configuration ----------------
 
-# Get the database URL from secrets
-db_url = st.secrets["DATABASE_URL"]
-
 # Database configuration
 SUPABASE_URL = st.secrets["SUPABASE_URL"]
 SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
