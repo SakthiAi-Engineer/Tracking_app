@@ -22,29 +22,10 @@ NVIDIA_API_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 
 db_url = st.secrets["DATABASE_URL"]
 
-# Create SQLAlchemy engine with SSL
-engine = create_engine(
-    db_url,
-    connect_args={"sslmode": "require"},
-    pool_pre_ping=True
-)
-
-def init_database():
-    try:
-        with engine.connect() as conn:
-            st.success("✅ Database connection successful!")
-    except Exception as e:
-        st.error(f"❌ Database connection failed: {e}")
-
 def get_db_connection():
-    db_url = st.secrets["DATABASE_URL"]
-    engine = create_engine(db_url)
-    return engine
-
-#def get_db_connection():
    # """Create database connection using SQLAlchemy"""
-   # engine = create_engine(DATABASE_URL)
-   # return engine
+    engine = create_engine(DATABASE_URL)
+    return engine
 
 def init_database():
     """Initialize database tables"""
