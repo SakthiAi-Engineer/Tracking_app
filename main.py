@@ -20,17 +20,17 @@ try:
         connect_args={"sslmode": "require"},
         pool_pre_ping=True
     )
-#     # Test connection
-#     with engine.connect() as conn:
-#         result = conn.execute(text("SELECT NOW();"))
-#         # Using a session state flag to show connection status only once
-#         if 'db_connected' not in st.session_state:
-#             st.success(f"✅ Database connected. Server time: {result.scalar()}")
-#             st.session_state.db_connected = True
-# except Exception as e:
-#     st.error(f"❌ DATABASE CONNECTION FAILED: {e}")
-#     st.error("Please ensure your DATABASE_URL is correctly configured in Streamlit secrets.")
-#     st.stop()
+    # Test connection
+    with engine.connect() as conn:
+        result = conn.execute(text("SELECT NOW();"))
+        # Using a session state flag to show connection status only once
+        if 'db_connected' not in st.session_state:
+            st.success(f"✅ Database connected. Server time: {result.scalar()}")
+            st.session_state.db_connected = True
+except Exception as e:
+    st.error(f"❌ DATABASE CONNECTION FAILED: {e}")
+    st.error("Please ensure your DATABASE_URL is correctly configured in Streamlit secrets.")
+    st.stop()
 
 # Database and API configurations from secrets
 SUPABASE_URL = st.secrets.get("SUPABASE_URL")
