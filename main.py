@@ -326,13 +326,26 @@ with st.sidebar:
         for k in list(st.session_state.keys()):
             del st.session_state[k]
         st.rerun()
-
+# Enable editing for admin
+if "enable_edits" not in st.session_state:
+    st.session_state.enable_edits = {}
+if "unlocked_process" not in st.session_state:
+    st.session_state.unlocked_process = {}
+if role == "admin":
+    st.sidebar.markdown("---")
+    toggle_po = st.sidebar.text_input("Enable PO for Editing")
+    if st.sidebar.button("Enable PO") and toggle_po:
+        st.session_state.enable_edits[toggle_po] = True
+    toggle_process = st.sidebar.text_input("Enable Process for Editing (PO_No:Process)")
+    if st.sidebar.button("Enable Process") and toggle_process:
+        po, proc = toggle_process.split(":")
+        st.session_state.unlocked_process[(po.strip(), proc.strip())] = True
 # ---------------- Navigation ----------------
 if role == "admin":
     page = st.sidebar.radio(
         "Go to",
         ["Dashboard", "Upload", "Planning", "Procurement", "Stores", 
-         "Daily Status Update", "Visualize", "Logs", "Ask AI"]
+         "Daily Status Update", "Visualize", "Logs", "Ask AI" , "Unlock POs" , "Unlock Process" ]
     )
 elif role == "planning":
     page = st.sidebar.radio("Go to", ["Dashboard", "Planning", "Visualize", "Ask AI"])
@@ -635,3 +648,23 @@ elif page == "Ask AI":
         st.chat_message("assistant").write(answer)
         st.session_state.chat_history.append(["assistant", answer])
 
+# ---------------- PAGE 5: UNLOCK -----------------
+if page == "Unlock POs" and role == "admin":
+    st.title("Unlock PO Data for Editing")
+    locked_pos = [po for po in pd.read_csv(FREEZE_FILE)["PO No"].unique() if po not in st.session_state.enable_edits]
+    if locked_pos:
+        selected_unlock_po = st.selectbox("Select PO to Unlock", locked_pos)
+        if st.button("Unlock Selected PO"):
+            st.session_state.enable_edits[selected_unlock_po] = True
+            st.success(f"PO {selected_unlock_po} has been unlocked.")
+    else:
+        st.info("No locked POs to unlock.")
+
+if page == "Unlock Process" and role == "admin":
+    st.title("Unlock Individual Process")
+    po_list = pd.read_csv(FREEZE_FILE)["PO No"].unique()
+    selected_po = st.selectbox("Select PO", po_list)
+    selected_process = st.selectbox("Select Process", process_options)
+    if st.button("Unlock Process"):
+        st.session_state.unlocked_process[(selected_po, selected_process)] = True
+        st.success(f"Process '{selected_process}' for PO '{selected_po}' has been unlocked.")
