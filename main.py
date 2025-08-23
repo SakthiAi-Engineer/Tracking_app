@@ -552,99 +552,38 @@ elif page == "Daily Status Update":
     allowed_sections = PROCESS_OPTIONS if role not in SECTION_ACCESS else SECTION_ACCESS[role]
     daily_status = get_daily_status()
     
+    
     for process in allowed_sections:
-       with st.expander(f"Update Status for: {process}"):
-        # Fetch existing status for this PO+process from DB
-        existing_status = daily_status[
-            (daily_status["po_no"] == selected_po) & 
-            (daily_status["process"] == process)
-        ]
-        
-        # Retrieve existing start/finish dates if available
-        existing_start = existing_status.iloc[0]['actual_start'] if not existing_status.empty else None
-        existing_finish = existing_status.iloc['actual_finish'] if not existing_status.empty else None
-        
-        # Check unlock status for the process
-        unlocked_proc = is_process_unlocked(selected_po, process)
+        with st.expander(f"Update Status for: {process}"):
+               # 1. Check if status for this PO+process is already in daily_status
+         existing_status = daily_status[
+             (daily_status["po_no"] == selected_po) &
+             (daily_status["process"] == process)
+         ]
+         unlocked_proc = is_process_unlocked(selected_po, process)
 
-        # Determine disabled state for each date input and remarks
-        start_disabled = (existing_start is not None) and (not unlocked_proc)
-        finish_disabled = (existing_finish is not None) and (not unlocked_proc)
-        remarks_disabled = (existing_status.empty == False) and (not unlocked_proc)
-
-        # Show date inputs with proper default value or None (blank)
-        start = st.date_input(
-            "Actual Start Date",
-            value=existing_start if existing_start is not None else None,
-            disabled=start_disabled,
-            key=f"start_{process}_{selected_po}",
-            help="Start date is frozen if already submitted and not unlocked"
-        )
-        finish = st.date_input(
-            "Actual Finish Date",
-            value=existing_finish if existing_finish is not None else None,
-            disabled=finish_disabled,
-            key=f"finish_{process}_{selected_po}",
-            help="Finish date is frozen if already submitted and not unlocked"
-        )
-
-        remarks = st.text_area(
-            "Remarks",
-            value=existing_status.iloc[0]['remarks'] if not existing_status.empty else "",
-            disabled=remarks_disabled,
-            key=f"remarks_{process}_{selected_po}"
-        )
-
-        # If form fields are frozen (disabled), disable submit button too
-        submit_disabled = start_disabled and finish_disabled and remarks_disabled
-
-        if not submit_disabled:
-            if st.button(f"Submit for {process}", key=f"submit_{process}_{selected_po}"):
-                save_daily_status({
-                    "po_no": selected_po,
-                    "customer": customer,
-                    "process": process,
-                    "actual_start": start,
-                    "actual_finish": finish,
-                    "remarks": remarks,
-                    "submitted_by": st.session_state["username"]
-                })
-                st.success(f"{process} status updated for PO {selected_po}")
-                st.experimental_rerun()  # Refresh to reflect freezing changes
-        else:
+         if not existing_status.empty and not unlocked_proc:
+            # Display "frozen" info (the existing date)
+            latest = existing_status.iloc[0]
+            st.success(f"Already submitted:\n\n- Start: {latest['actual_start']}\n- Finish: {latest['actual_finish']}\n- Remarks: {latest['remarks']}")
             st.info("This status is frozen and cannot be edited.")
-
-    # for process in allowed_sections:
-    #     with st.expander(f"Update Status for: {process}"):
-    #            # 1. Check if status for this PO+process is already in daily_status
-    #      existing_status = daily_status[
-    #          (daily_status["po_no"] == selected_po) &
-    #          (daily_status["process"] == process)
-    #      ]
-    #      unlocked_proc = is_process_unlocked(selected_po, process)
-
-    #      if not existing_status.empty and not unlocked_proc:
-    #         # Display "frozen" info (the existing date)
-    #         latest = existing_status.iloc[0]
-    #         st.success(f"Already submitted:\n\n- Start: {latest['actual_start']}\n- Finish: {latest['actual_finish']}\n- Remarks: {latest['remarks']}")
-    #         st.info("This status is frozen and cannot be edited.")
-    #         # Optionally show read-only input fields:
-    #         st.date_input("Actual Start Date", value=latest['actual_start'], disabled=True)
-    #         st.date_input("Actual Finish Date", value=latest['actual_finish'], disabled=True)
-    #         st.text_area("Remarks", value=latest['remarks'], disabled=True)
-    #      else:
-    #         # Show editable form as in your original code
-    #         with st.form(key=f"form_{process}_{selected_po}", clear_on_submit=True):
-    #             start = st.date_input("Actual Start Date", key=f"start_{process}")
-    #             finish = st.date_input("Actual Finish Date", key=f"finish_{process}")
-    #             remarks = st.text_area("Remarks", key=f"remarks_{process}")
-    #             if st.form_submit_button(f"Submit for {process}"):
-    #                 save_daily_status({
-    #                     "po_no": selected_po, "customer": customer, "process": process,
-    #                     "actual_start": start, "actual_finish": finish, "remarks": remarks,
-    #                     "submitted_by": st.session_state["username"]
-    #                 })
-    #                 st.success(f"{process} status updated for PO {selected_po}")
+            # Optionally show read-only input fields:
+            st.date_input("Actual Start Date", value=latest['actual_start'], disabled=True)
+            st.date_input("Actual Finish Date", value=latest['actual_finish'], disabled=True)
+            st.text_area("Remarks", value=latest['remarks'], disabled=True)
+         else:
+            # Show editable form as in your original code
+            with st.form(key=f"form_{process}_{selected_po}", clear_on_submit=True):
+                start = st.date_input("Actual Start Date", key=f"start_{process}")
+                finish = st.date_input("Actual Finish Date", key=f"finish_{process}")
+                remarks = st.text_area("Remarks", key=f"remarks_{process}")
+                if st.form_submit_button(f"Submit for {process}"):
+                    save_daily_status({
+                        "po_no": selected_po, "customer": customer, "process": process,
+                        "actual_start": start, "actual_finish": finish, "remarks": remarks,
+                        "submitted_by": st.session_state["username"]
+                    })
+                    st.success(f"{process} status updated for PO {selected_po}")
             # with st.form(key=f"form_{process}_{selected_po}", clear_on_submit=True):
             #     start = st.date_input("Actual Start Date", key=f"start_{process}")
             #     finish = st.date_input("Actual Finish Date", key=f"finish_{process}")
