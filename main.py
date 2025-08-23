@@ -257,6 +257,13 @@ def get_procurement_data(data_type=None):
         query = text("SELECT * FROM procurement_data ORDER BY id")
         params = {}
     return pd.read_sql(query, engine, params=params)
+def get_memory_usage():
+    process = psutil.Process(os.getpid())
+    mem_info = process.memory_info()
+    return mem_info.rss / (1024 ** 2)  # Memory usage in MB
+
+st.sidebar.title("System Monitor")
+st.sidebar.write(f"Memory Usage: {get_memory_usage():.2f} MB")
 
 # ---------------- AI Integration ----------------
 def ask_nvidia_ai(prompt, context="", history=""):
@@ -606,10 +613,4 @@ elif page == "Ask AI":
         
         st.chat_message("assistant").write(answer)
         st.session_state.chat_history.append(["assistant", answer])
-def get_memory_usage():
-    process = psutil.Process(os.getpid())
-    mem_info = process.memory_info()
-    return mem_info.rss / (1024 ** 2)  # Memory usage in MB
 
-st.sidebar.title("System Monitor")
-st.sidebar.write(f"Memory Usage: {get_memory_usage():.2f} MB")
