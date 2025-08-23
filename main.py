@@ -12,16 +12,14 @@ from passlib.context import CryptContext
 # ---------------- Password Hashing Setup ----------------
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-engine = create_engine(
+# ---------------- Cloud Configuration ----------------
+try:
+    db_url = st.secrets["DATABASE_URL"]
+    engine = create_engine(
         db_url,
         connect_args={"sslmode": "require"},
         pool_pre_ping=True
     )
-
-# ---------------- Cloud Configuration ----------------
-try:
-    db_url = st.secrets["DATABASE_URL"]
-
     # Test connection
     with engine.connect() as conn:
         result = conn.execute(text("SELECT NOW();"))
