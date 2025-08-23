@@ -497,25 +497,10 @@ elif page == "Daily Status Update":
     st.text_input("Customer", customer, disabled=True)
     
     allowed_sections = PROCESS_OPTIONS if role not in SECTION_ACCESS else SECTION_ACCESS[role]
-    # In your Daily Status Update section, in the for process in allowed_sections loop:
-for process in allowed_sections:
-    with st.expander(f"Update Status for: {process}"):
-        # 1. Check if status for this PO+process is already in daily_status
-        existing_status = daily_status[
-            (daily_status["po_no"] == selected_po) &
-            (daily_status["process"] == process)
-        ]
-        if not existing_status.empty:
-            # Display "frozen" info (the existing date)
-            latest = existing_status.iloc[0]
-            st.success(f"Already submitted:\n\n- Start: {latest['actual_start']}\n- Finish: {latest['actual_finish']}\n- Remarks: {latest['remarks']}")
-            st.info("This status is frozen and cannot be edited.")
-            # Optionally show read-only input fields:
-            st.date_input("Actual Start Date", value=latest['actual_start'], disabled=True)
-            st.date_input("Actual Finish Date", value=latest['actual_finish'], disabled=True)
-            st.text_area("Remarks", value=latest['remarks'], disabled=True)
-        else:
-            # Show editable form as in your original code
+   
+      
+    for process in allowed_sections:
+        with st.expander(f"Update Status for: {process}"):
             with st.form(key=f"form_{process}_{selected_po}", clear_on_submit=True):
                 start = st.date_input("Actual Start Date", key=f"start_{process}")
                 finish = st.date_input("Actual Finish Date", key=f"finish_{process}")
@@ -527,22 +512,6 @@ for process in allowed_sections:
                         "submitted_by": st.session_state["username"]
                     })
                     st.success(f"{process} status updated for PO {selected_po}")
-
-    
-      
-    # for process in allowed_sections:
-    #     with st.expander(f"Update Status for: {process}"):
-    #         with st.form(key=f"form_{process}_{selected_po}", clear_on_submit=True):
-    #             start = st.date_input("Actual Start Date", key=f"start_{process}")
-    #             finish = st.date_input("Actual Finish Date", key=f"finish_{process}")
-    #             remarks = st.text_area("Remarks", key=f"remarks_{process}")
-    #             if st.form_submit_button(f"Submit for {process}"):
-    #                 save_daily_status({
-    #                     "po_no": selected_po, "customer": customer, "process": process,
-    #                     "actual_start": start, "actual_finish": finish, "remarks": remarks,
-    #                     "submitted_by": st.session_state["username"]
-    #                 })
-    #                 st.success(f"{process} status updated for PO {selected_po}")
 
 elif page == "Visualize":
     st.title("📊 Process Completion Matrix")
