@@ -95,6 +95,15 @@ def init_database():
                 actual_in_house_date DATE
             )
         """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS unlocked_status (
+                id SERIAL PRIMARY KEY,
+                po_no VARCHAR(50),
+                process VARCHAR(50),
+                unlocked BOOLEAN DEFAULT FALSE,
+                UNIQUE (po_no, process)
+            )
+        """))
         conn.commit()
 
 def insert_default_users():
