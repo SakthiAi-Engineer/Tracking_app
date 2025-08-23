@@ -606,3 +606,10 @@ elif page == "Ask AI":
         
         st.chat_message("assistant").write(answer)
         st.session_state.chat_history.append(["assistant", answer])
+def get_memory_usage():
+    process = psutil.Process(os.getpid())
+    mem_info = process.memory_info()
+    return mem_info.rss / (1024 ** 2)  # Memory usage in MB
+
+st.sidebar.title("System Monitor")
+st.sidebar.write(f"Memory Usage: {get_memory_usage():.2f} MB")
