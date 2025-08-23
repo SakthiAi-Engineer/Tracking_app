@@ -711,3 +711,10 @@ elif page == "Unlock" and role == "admin":
     if st.button("Unlock Process"):
        unlock_process(selected_po, selected_process)
        st.success(f"Process '{selected_process}' for PO '{selected_po}' has been unlocked for editing.")
+def get_memory_usage():
+    process = psutil.Process(os.getpid())
+    mem_info = process.memory_info()
+    return mem_info.rss / (1024 ** 2)  # Memory usage in MB
+
+st.sidebar.title("System Monitor")
+st.sidebar.write(f"Memory Usage: {get_memory_usage():.2f} MB")
