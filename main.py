@@ -19,7 +19,7 @@ try:
         db_url,
         connect_args={"sslmode": "require"},
         pool_pre_ping=True
-    )
+     )
     # Test connection
     with engine.connect() as conn:
         result = conn.execute(text("SELECT NOW();"))
