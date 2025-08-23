@@ -19,7 +19,7 @@ try:
         db_url,
         connect_args={"sslmode": "require"},
         pool_pre_ping=True
-     )
+    )
     # Test connection
     with engine.connect() as conn:
         result = conn.execute(text("SELECT NOW();"))
@@ -42,7 +42,6 @@ NVIDIA_API_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 def get_db_connection():
     """Returns a new SQLAlchemy engine instance."""
     return create_engine(
-    engine=create_engine(
         st.secrets["DATABASE_URL"],
         connect_args={"sslmode": "require"},
         pool_pre_ping=True
