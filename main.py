@@ -501,12 +501,12 @@ elif page == "Daily Status Update":
       
     for process in allowed_sections:
         with st.expander(f"Update Status for: {process}"):
-            # 1. Check if status for this PO+process is already in daily_status
-        existing_status = daily_status[
-            (daily_status["po_no"] == selected_po) &
-            (daily_status["process"] == process)
-        ]
-        if not existing_status.empty:
+               # 1. Check if status for this PO+process is already in daily_status
+         existing_status = daily_status[
+             (daily_status["po_no"] == selected_po) &
+             (daily_status["process"] == process)
+         ]
+         if not existing_status.empty:
             # Display "frozen" info (the existing date)
             latest = existing_status.iloc[0]
             st.success(f"Already submitted:\n\n- Start: {latest['actual_start']}\n- Finish: {latest['actual_finish']}\n- Remarks: {latest['remarks']}")
@@ -515,7 +515,7 @@ elif page == "Daily Status Update":
             st.date_input("Actual Start Date", value=latest['actual_start'], disabled=True)
             st.date_input("Actual Finish Date", value=latest['actual_finish'], disabled=True)
             st.text_area("Remarks", value=latest['remarks'], disabled=True)
-        else:
+         else:
             # Show editable form as in your original code
             with st.form(key=f"form_{process}_{selected_po}", clear_on_submit=True):
                 start = st.date_input("Actual Start Date", key=f"start_{process}")
