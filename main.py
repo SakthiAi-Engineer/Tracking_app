@@ -299,6 +299,12 @@ def unlock_po(po_no):
                 DO UPDATE SET unlocked = TRUE
             """), {"po_no": po_no, "process": process})
         conn.commit()
+def get_all_unlocked():
+    engine_local = get_db_connection()
+    query = text("SELECT po_no, process FROM unlocked_status WHERE unlocked = TRUE")
+    df = pd.read_sql(query, engine_local)
+    return set((row.po_no, row.process) for row in df.itertuples())
+
 
 
 # ---------------- AI Integration ----------------
@@ -681,33 +687,36 @@ elif page == "Ask AI":
         
         st.chat_message("assistant").write(answer)
         st.session_state.chat_history.append(["assistant", answer])
-#Unlock page
+#Unlock Page
 elif page == "Unlock" and role == "admin":
     st.title("🔓 Unlock PO or Process for Editing")
 
-    st.subheader("Unlock Entire PO for Editing")
-    # Get all PO numbers in frozen_plans
     frozen_plans_df = get_frozen_plans()
     all_pos = sorted(frozen_plans_df['po_no'].unique().tolist())
-    # Identify locked POs: Not in session_state.enable_edits or False
-    locked_pos = [po for po in all_pos if not any(is_process_unlocked(po, p) for p in PROCESS_OPTIONS)]
+
+    # Fetch all unlocked PO-process pairs once
+    unlocked_set = get_all_unlocked()
+
+    # Compute locked POs efficiently
+    locked_pos = []
+    for po in all_pos:
+        # If no process for this PO is unlocked, then it is locked
+        if not any((po, p) in unlocked_set for p in PROCESS_OPTIONS):
+            locked_pos.append(po)
+
     if locked_pos:
         selected_unlock_po = st.selectbox("Select PO to Unlock", locked_pos)
         if st.button("Unlock Selected PO"):
             unlock_po(selected_unlock_po)
             st.success(f"PO {selected_unlock_po} has been unlocked for editing.")
     else:
-        st.info("All POs are currently unlocked ")
+        st.info("All POs are currently unlocked")
 
     st.markdown("---")
 
     st.subheader("Unlock Individual Process")
-    process_options = [
-        "External Order", "Weaving", "Greige Inspection", "Processing",
-        "Inspection", "Stitching", "Final Inspection", "Packing & Cartoning", "Shipment"
-    ]
     selected_po = st.selectbox("Select PO", all_pos, key="unlock_proc_po")
-    selected_process = st.selectbox("Select Process", process_options, key="unlock_proc_process")
+    selected_process = st.selectbox("Select Process", PROCESS_OPTIONS, key="unlock_proc_process")
     if st.button("Unlock Process"):
-       unlock_process(selected_po, selected_process)
-       st.success(f"Process '{selected_process}' for PO '{selected_po}' has been unlocked for editing.")
+        unlock_process(selected_po, selected_process)
+        st.success(f"Process '{selected_process}' for PO '{selected_po}' has been unlocked for editing.")
