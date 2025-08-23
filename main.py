@@ -559,6 +559,8 @@ elif page == "Daily Status Update":
              (daily_status["po_no"] == selected_po) &
              (daily_status["process"] == process)
          ]
+        unlocked_proc = is_process_unlocked(selected_po, process)
+
          if not existing_status.empty and not unlocked_proc:
             # Display "frozen" info (the existing date)
             latest = existing_status.iloc[0]
