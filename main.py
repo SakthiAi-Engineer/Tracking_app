@@ -552,8 +552,8 @@ elif page == "Daily Status Update":
     allowed_sections = PROCESS_OPTIONS if role not in SECTION_ACCESS else SECTION_ACCESS[role]
     daily_status = get_daily_status()
     
-      for process in allowed_sections:
-        with st.expander(f"Update Status for: {process}"):
+    for process in allowed_sections:
+       with st.expander(f"Update Status for: {process}"):
         # Fetch existing status for this PO+process from DB
         existing_status = daily_status[
             (daily_status["po_no"] == selected_po) & 
