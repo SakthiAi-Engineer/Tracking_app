@@ -331,15 +331,15 @@ if "enable_edits" not in st.session_state:
     st.session_state.enable_edits = {}
 if "unlocked_process" not in st.session_state:
     st.session_state.unlocked_process = {}
-if role == "admin":
-    st.sidebar.markdown("---")
-    toggle_po = st.sidebar.text_input("Enable PO for Editing")
-    if st.sidebar.button("Enable PO") and toggle_po:
-        st.session_state.enable_edits[toggle_po] = True
-    toggle_process = st.sidebar.text_input("Enable Process for Editing (PO_No:Process)")
-    if st.sidebar.button("Enable Process") and toggle_process:
-        po, proc = toggle_process.split(":")
-        st.session_state.unlocked_process[(po.strip(), proc.strip())] = True
+# if role == "admin":
+#     st.sidebar.markdown("---")
+#     toggle_po = st.sidebar.text_input("Enable PO for Editing")
+#     if st.sidebar.button("Enable PO") and toggle_po:
+#         st.session_state.enable_edits[toggle_po] = True
+#     toggle_process = st.sidebar.text_input("Enable Process for Editing (PO_No:Process)")
+#     if st.sidebar.button("Enable Process") and toggle_process:
+#         po, proc = toggle_process.split(":")
+#         st.session_state.unlocked_process[(po.strip(), proc.strip())] = True
 # ---------------- Navigation ----------------
 if role == "admin":
     page = st.sidebar.radio(
