@@ -266,6 +266,40 @@ def get_procurement_data(data_type=None):
         query = text("SELECT * FROM procurement_data ORDER BY id")
         params = {}
     return pd.read_sql(query, engine, params=params)
+def unlock_process(po_no, process):
+    engine = get_db_connection()
+    with engine.connect() as conn:
+        # Upsert unlock status
+        conn.execute(text("""
+            INSERT INTO unlocked_status (po_no, process, unlocked)
+            VALUES (:po_no, :process, TRUE)
+            ON CONFLICT (po_no, process)
+            DO UPDATE SET unlocked = TRUE
+        """), {"po_no": po_no, "process": process})
+        conn.commit()
+
+def is_process_unlocked(po_no, process):
+    engine = get_db_connection()
+    with engine.connect() as conn:
+        result = conn.execute(text("""
+            SELECT unlocked FROM unlocked_status
+            WHERE po_no = :po_no AND process = :process
+        """), {"po_no": po_no, "process": process})
+        result_row = result.fetchone()
+        return result_row is not None and result_row[0] == True
+
+def unlock_po(po_no):
+    engine = get_db_connection()
+    with engine.connect() as conn:
+        for process in PROCESS_OPTIONS:
+            conn.execute(text("""
+                INSERT INTO unlocked_status (po_no, process, unlocked)
+                VALUES (:po_no, :process, TRUE)
+                ON CONFLICT (po_no, process)
+                DO UPDATE SET unlocked = TRUE
+            """), {"po_no": po_no, "process": process})
+        conn.commit()
+
 
 # ---------------- AI Integration ----------------
 def ask_nvidia_ai(prompt, context="", history=""):
@@ -519,7 +553,7 @@ elif page == "Daily Status Update":
              (daily_status["po_no"] == selected_po) &
              (daily_status["process"] == process)
          ]
-         if not existing_status.empty:
+         if not existing_status.empty and not unlocked_proc:
             # Display "frozen" info (the existing date)
             latest = existing_status.iloc[0]
             st.success(f"Already submitted:\n\n- Start: {latest['actual_start']}\n- Finish: {latest['actual_finish']}\n- Remarks: {latest['remarks']}")
@@ -647,7 +681,7 @@ elif page == "Ask AI":
         
         st.chat_message("assistant").write(answer)
         st.session_state.chat_history.append(["assistant", answer])
-
+#Unlock page
 elif page == "Unlock" and role == "admin":
     st.title("🔓 Unlock PO or Process for Editing")
 
@@ -656,14 +690,14 @@ elif page == "Unlock" and role == "admin":
     frozen_plans_df = get_frozen_plans()
     all_pos = sorted(frozen_plans_df['po_no'].unique().tolist())
     # Identify locked POs: Not in session_state.enable_edits or False
-    locked_pos = [po for po in all_pos if not st.session_state.enable_edits.get(po, False)]
+    locked_pos = [po for po in all_pos if not any(is_process_unlocked(po, p) for p in PROCESS_OPTIONS)]
     if locked_pos:
         selected_unlock_po = st.selectbox("Select PO to Unlock", locked_pos)
         if st.button("Unlock Selected PO"):
-            st.session_state.enable_edits[selected_unlock_po] = True
+            unlock_po(selected_unlock_po)
             st.success(f"PO {selected_unlock_po} has been unlocked for editing.")
     else:
-        st.info("All POs are currently unlocked for this admin session.")
+        st.info("All POs are currently unlocked ")
 
     st.markdown("---")
 
@@ -675,5 +709,5 @@ elif page == "Unlock" and role == "admin":
     selected_po = st.selectbox("Select PO", all_pos, key="unlock_proc_po")
     selected_process = st.selectbox("Select Process", process_options, key="unlock_proc_process")
     if st.button("Unlock Process"):
-        st.session_state.unlocked_process[(selected_po, selected_process)] = True
-        st.success(f"Process '{selected_process}' for PO '{selected_po}' has been unlocked for editing.")
+       unlock_process(selected_po, selected_process)
+       st.success(f"Process '{selected_process}' for PO '{selected_po}' has been unlocked for editing.")
