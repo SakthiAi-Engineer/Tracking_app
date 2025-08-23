@@ -44,11 +44,11 @@ NVIDIA_API_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 # def get_db_connection():
     # """Returns a new SQLAlchemy engine instance."""
     # return create_engine(
-    engine=create_engine(
-        st.secrets["DATABASE_URL"],
-        connect_args={"sslmode": "require"},
-        pool_pre_ping=True
-    )
+    # engine=create_engine(
+    #     st.secrets["DATABASE_URL"],
+    #     connect_args={"sslmode": "require"},
+    #     pool_pre_ping=True
+    # )
 
 def init_database():
     # """Initialize database tables if they don't exist."""
